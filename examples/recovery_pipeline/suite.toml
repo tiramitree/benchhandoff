@@ -1,0 +1,20 @@
+version = 1
+name = "recovery-pipeline"
+
+[[task]]
+id = "prepare-features"
+argv = ["python", "generate.py", "input.json", "features.json"]
+inputs = ["generate.py", "input.json"]
+outputs = ["features.json"]
+
+[[task]]
+id = "evaluate"
+argv = ["python", "evaluate.py", "features.json", "config.json", "metrics.json"]
+inputs = ["evaluate.py", "features.json", "config.json"]
+outputs = ["metrics.json"]
+
+[[task]]
+id = "summarize"
+argv = ["python", "summarize.py", "metrics.json", "summary.json"]
+inputs = ["summarize.py", "metrics.json"]
+outputs = ["summary.json"]

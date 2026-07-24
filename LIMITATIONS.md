@@ -5,7 +5,9 @@ distributed workflow engine.
 
 ## Implemented execution targets
 
-- Child execution is supported on Windows and Linux only.
+- Child execution targets Windows and Linux only. Those implementations exist,
+  but cross-platform support is not claimed until the public CI matrix has
+  completed successfully.
 - Linux requires a readable `/proc` process identity. macOS and other operating
   systems do not have a v0.1 start-token implementation and fail closed after
   launch rather than proceeding without a stable child identity.

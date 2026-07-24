@@ -8,27 +8,35 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  validate:
+  test:
     name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-latest
-          - windows-latest
+          - ubuntu-24.04
+          - windows-2025
         python-version:
           - "3.11"
           - "3.12"
+          - "3.13"
+          - "3.14"
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -40,16 +48,116 @@ jobs:
         env:
           PYTHONPATH: src
 
-      - name: Run focused recovery benchmark
-        run: python benchmarks/synthetic/run_benchmark.py
+  benchmark-evidence:
+    name: Canonical synthetic benchmark evidence
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
-      - name: Run pipeline comparison benchmark
-        run: python benchmarks/synthetic/run_pipeline_comparison.py
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
 
-      - name: Build and install package from source
-        run: python -m pip install .
-
-      - name: Smoke installed CLI and metadata
+      - name: Generate machine-readable benchmark records
+        shell: bash
+        env:
+          PYTHONPATH: src
         run: |
-          python -m pip check
-          benchhandoff --help
+          set -euo pipefail
+          evidence_root="$RUNNER_TEMP/benchhandoff-evidence"
+          mkdir "$evidence_root"
+          python benchmarks/synthetic/run_benchmark.py --output "$evidence_root/focused-recovery.json"
+          python benchmarks/synthetic/run_pipeline_comparison.py --output "$evidence_root/pipeline-comparison.json"
+          python -c 'import json,pathlib,sys; r=pathlib.Path(sys.argv[1]); h=sys.argv[2]; d=[json.loads((r/n).read_text(encoding="utf-8")) for n in ("focused-recovery.json","pipeline-comparison.json")]; assert all(x["source_git_clean"] is True and x["source_git_commit"] == h for x in d)' "$evidence_root" "$GITHUB_SHA"
+          (
+            cd "$evidence_root"
+            sha256sum focused-recovery.json pipeline-comparison.json > SHA256SUMS
+          )
+
+      - name: Upload benchmark records
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchhandoff-benchmark-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/benchhandoff-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  package:
+    name: Build once and test exact distribution bytes
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Enforce the explicit license gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s LICENSE
+          test ! -e LICENSING_STATUS.md
+          python -c 'import pathlib,tomllib; p=tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]; assert p.get("license") in {"Apache-2.0","MIT"}; assert "LICENSE" in p.get("license-files",[])'
+
+      - name: Build and inspect sdist and wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check build==1.5.0 twine==6.2.0
+          python -m build
+          python -m twine check --strict dist/*
+          test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
+          wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          sdist="$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          unzip -Z1 "$wheel" | grep -Eq '(^|/)licenses/LICENSE$'
+          tar -tzf "$sdist" | grep -Eq '/LICENSE$'
+          (
+            cd dist
+            sha256sum * > SHA256SUMS
+          )
+
+      - name: Install and smoke the exact wheel outside the checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_root="$RUNNER_TEMP/benchhandoff-wheel-smoke"
+          mkdir -p "$smoke_root"
+          wheel="$(find "$GITHUB_WORKSPACE/dist" -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          python -m venv "$smoke_root/venv"
+          "$smoke_root/venv/bin/python" -m pip install --disable-pip-version-check "$wheel"
+          (
+            cd "$smoke_root"
+            "$smoke_root/venv/bin/python" -c 'from importlib.metadata import version; import benchhandoff; assert version("benchhandoff") == benchhandoff.__version__'
+            "$smoke_root/venv/bin/benchhandoff" --help
+            cp -R "$GITHUB_WORKSPACE/examples/recovery_pipeline" demo
+            mkdir runs
+            set +e
+            PATH="$smoke_root/venv/bin:$PATH" "$smoke_root/venv/bin/benchhandoff" start demo/suite.toml --run-dir runs/recovery
+            start_code="$?"
+            set -e
+            test "$start_code" -eq 20
+            PATH="$smoke_root/venv/bin:$PATH" "$smoke_root/venv/bin/benchhandoff" resume runs/recovery
+            "$smoke_root/venv/bin/benchhandoff" verify runs/recovery
+          )
+
+      - name: Upload the tested distribution bytes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchhandoff-dist-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a reproducible BenchHandoff defect using non-sensitive evidence.
+title: "[Bug] "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reducing the problem. Do not upload a raw run directory,
+        task log, absolute path, username, token, credential, private dataset,
+        command-line secret, or environment dump. Security issues belong in the
+        private process described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Release or commit
+      description: Give the exact released version or full commit SHA.
+      placeholder: "0.1.0 or 40 hexadecimal characters"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python implementation, and Python version only.
+      placeholder: "Windows 11; CPython 3.12.13"
+    validations:
+      required: true
+  - type: dropdown
+    id: command
+    attributes:
+      label: Command
+      options:
+        - start
+        - resume
+        - verify
+        - package or install
+        - tests or synthetic benchmark
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal synthetic reproduction
+      description: Use new synthetic files and relative placeholder paths.
+      placeholder: |
+        1. Create ...
+        2. Run ...
+        3. Observe exit code ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: State the exit code and a sanitized error category; do not paste sensitive logs.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Disclosure check
+      options:
+        - label: I removed private data, raw logs, absolute paths, usernames, credentials, and tokens.
+          required: true
+        - label: This is not a vulnerability report requiring private handling.
+          required: true

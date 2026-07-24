@@ -12,8 +12,9 @@ reviewable records:
 - `bundle.json`: the final hashes for the plan, state, event chain, task logs,
   quarantined partial outputs, and verified outputs.
 
-The exact name was checked against PyPI, npm, crates.io, and GitHub on
-2026-07-24; repeat that check immediately before publication. This repository
+A manual point-in-time name check against PyPI, npm, crates.io, and GitHub found
+no exact match on 2026-07-24. That is not a trademark or permanent-availability
+conclusion; repeat the check immediately before publication. This repository
 has not been published and no external adoption is claimed.
 
 BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
@@ -45,7 +46,7 @@ guarantee. See [LIMITATIONS.md](LIMITATIONS.md).
 
 ## Requirements and implemented execution targets
 
-- Python 3.11 or newer.
+- Python 3.11 or newer. The checked-in CI plan covers CPython 3.11 through 3.14.
 - Windows or Linux for child execution. Linux requires `/proc` so the runner can
   bind a PID to a stable process-start identity.
 - No third-party runtime packages.
@@ -59,41 +60,52 @@ optional package build uses setuptools. Running from source needs no install.
 
 ## Validation status
 
-As of 2026-07-24, the current local Windows/Python 3.12.13 suite ran 81 tests:
-79 passed and 2 symlink-creation tests were skipped because this Windows account
+As of 2026-07-24, the current local Windows/Python 3.12.13 suite ran 84 tests:
+82 passed and 2 symlink-creation tests were skipped because this Windows account
 lacks that privilege. There were no failures or errors. The checked-in CI matrix
-covers Ubuntu and Windows with Python 3.11 and 3.12, but it is only a proposed
-test plan until an online run exists. No production, third-party, or external
-adoption claim is made. See [VALIDATION_20260724.md](VALIDATION_20260724.md).
+covers Ubuntu 24.04 and Windows Server 2025 with Python 3.11 through 3.14, but it
+is only a proposed test plan until an online run exists. No production,
+third-party, or external-adoption claim is made. See
+[VALIDATION_20260724.md](VALIDATION_20260724.md).
 
 ## Five-minute quickstart
 
+The recovery example deliberately fails once after writing a partial output.
 From the repository root in PowerShell:
 
 ```powershell
-Copy-Item -LiteralPath examples\basic -Destination demo -Recurse
+Copy-Item -LiteralPath examples\recovery_pipeline -Destination demo-recovery -Recurse
 New-Item -ItemType Directory -Path runs
 $env:PYTHONPATH = "src"
-python -m benchhandoff start demo\suite.toml --run-dir runs\basic
-python -m benchhandoff verify runs\basic
+python -m benchhandoff start demo-recovery\suite.toml --run-dir runs\recovery
+if ($LASTEXITCODE -ne 20) { throw "expected the synthetic first attempt to fail" }
+python -m benchhandoff resume runs\recovery
+python -m benchhandoff verify runs\recovery
 ```
 
-The task writes `demo/output.json`; the run evidence is written separately under
-`runs/basic`. Both paths must start absent.
+The first task remains complete, the failed task's partial `metrics.json` moves
+to quarantine, and only the incomplete suffix runs again. The final bundle is
+written under `runs/recovery`. All copied suite outputs and the run directory
+must start absent.
 
 Equivalent commands on Linux:
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-cp -R examples/basic demo
+cp -R examples/recovery_pipeline demo-recovery
 mkdir -p runs
-PYTHONPATH=src python -m benchhandoff start demo/suite.toml --run-dir runs/basic
-PYTHONPATH=src python -m benchhandoff verify runs/basic
+set +e
+PYTHONPATH=src python -m benchhandoff start demo-recovery/suite.toml --run-dir runs/recovery
+start_code=$?
+set -e
+test "$start_code" -eq 20
+PYTHONPATH=src python -m benchhandoff resume runs/recovery
+PYTHONPATH=src python -m benchhandoff verify runs/recovery
 ```
 
 Activating the virtual environment matters for this example because the suite
-invokes `python` by name.
+invokes `python` by name. A success-only example remains under `examples/basic`.
 
 ## Suite format
 
@@ -179,5 +191,27 @@ $env:PYTHONPATH = "src"
 python -m unittest discover -s tests -v
 ```
 
-See [docs/EVIDENCE_FORMAT.md](docs/EVIDENCE_FORMAT.md) for the record model and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the execution boundary.
+## Public evidence and independent reproduction
+
+The CI definition separates an eight-job operating-system/Python test matrix, a
+single canonical synthetic-evidence job, and a package job that builds once,
+checks both distributions, installs the exact wheel outside the checkout, runs
+the failure-to-resume example, and uploads only those tested bytes. It is
+license-gated and remains a proposed plan until public workflow URLs exist.
+
+After publication, structured issue forms can record reproducible bugs and
+bounded independent reproduction attempts. Repository views, stars, downloads,
+self-authored examples, and CI runs are not described as external adoption.
+See [docs/REPRODUCING.md](docs/REPRODUCING.md) for the evidence boundary.
+
+## Project documents
+
+- [Evidence format](docs/EVIDENCE_FORMAT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Recovery example](examples/recovery_pipeline/README.md)
+- [Limitations](LIMITATIONS.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [Support](SUPPORT.md)
+- [Release process](docs/RELEASING.md)
+- [Changelog](CHANGELOG.md)

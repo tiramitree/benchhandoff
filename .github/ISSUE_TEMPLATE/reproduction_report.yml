@@ -1,0 +1,85 @@
+name: Independent reproduction report
+description: Record one bounded external validation or synthetic reproduction attempt.
+title: "[Reproduction] "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form records one reproduction attempt. It does not by itself
+        establish production use, broad compatibility, scientific validity, or
+        ongoing adoption. Never upload raw run evidence, logs, absolute paths,
+        credentials, tokens, private inputs, or environment dumps.
+  - type: input
+    id: source
+    attributes:
+      label: Release or commit
+      description: Give the exact released version or full commit SHA.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python implementation, and Python version.
+      placeholder: "Ubuntu 24.04; CPython 3.12.4"
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Reproduction scope
+      options:
+        - Full source test suite
+        - Synthetic pipeline comparison
+        - Focused synthetic recovery benchmark
+        - Installed-wheel smoke test
+        - Other bounded check
+    validations:
+      required: true
+  - type: textarea
+    id: procedure
+    attributes:
+      label: Commands and procedure
+      description: Use relative placeholder paths and omit secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      description: Report passes, failures, errors, and skips separately.
+    validations:
+      required: true
+  - type: textarea
+    id: hashes
+    attributes:
+      label: Evidence SHA-256 values
+      description: List hashes of bounded raw result files, not raw run directories.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: deviations
+    attributes:
+      label: Deviations from docs/REPRODUCING.md
+      description: Write "None" or explain every change.
+    validations:
+      required: true
+  - type: input
+    id: immutable_link
+    attributes:
+      label: Optional immutable evidence link
+      description: Link only to manually reviewed, non-sensitive evidence.
+    validations:
+      required: false
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Claim and privacy boundary
+      options:
+        - label: I manually reviewed the submitted material and removed private or identifying data.
+          required: true
+        - label: I understand this report documents one attempt and is not an adoption or production-use claim.
+          required: true

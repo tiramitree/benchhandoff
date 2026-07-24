@@ -7,6 +7,7 @@ import json
 import sys
 from collections.abc import Sequence
 
+from benchhandoff import __version__
 from benchhandoff.engine import resume_run, start_run, verify_run
 from benchhandoff.errors import BenchHandoffError
 
@@ -15,6 +16,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="benchhandoff",
         description="Run sequential benchmark tasks and verify their file evidence.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
