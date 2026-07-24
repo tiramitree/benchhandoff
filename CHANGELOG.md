@@ -24,6 +24,10 @@ and no external adoption is claimed.
 - A proposed eight-job Python/operating-system matrix, commit-pinned Actions,
   canonical machine-readable benchmark artifacts, and build-once exact-wheel
   smoke testing behind the explicit license gate.
+- A single cross-platform synthetic-reproduction entrypoint that refuses dirty
+  source, overwrite, linked or nonempty parents, and in-repository output, then
+  writes two raw records, a bounded summary, a verified SHA-256 manifest, and a
+  completion record.
 
 ### Security
 

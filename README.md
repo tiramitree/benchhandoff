@@ -60,8 +60,8 @@ optional package build uses setuptools. Running from source needs no install.
 
 ## Validation status
 
-As of 2026-07-24, the current local Windows/Python 3.12.13 suite ran 84 tests:
-82 passed and 2 symlink-creation tests were skipped because this Windows account
+As of 2026-07-24, the current local Windows/Python 3.12.10 suite ran 93 tests:
+91 passed and 2 symlink-creation tests were skipped because this Windows account
 lacks that privilege. There were no failures or errors. The checked-in CI matrix
 covers Ubuntu 24.04 and Windows Server 2025 with Python 3.11 through 3.14, but it
 is only a proposed test plan until an online run exists. No production,
@@ -170,12 +170,25 @@ does not guess that retry is safe.
 | `20` | Child task failed closed |
 | `30` | Evidence or operational state could not be safely interpreted |
 
-## Reproduce the 12-task synthetic comparison
+## Reproduce the synthetic evidence package
+
+From a clean checkout, create a unique parent outside the repository and run
+the single cross-platform entrypoint:
 
 ```powershell
+$parent = New-Item -ItemType Directory -Path (
+  Join-Path ([IO.Path]::GetTempPath()) ("benchhandoff-" + [guid]::NewGuid())
+)
 $env:PYTHONPATH = "src"
-python benchmarks\synthetic\run_pipeline_comparison.py
+python benchmarks\synthetic\reproduce.py `
+  --output-dir (Join-Path $parent.FullName "package")
 ```
+
+It produces two raw records, a bounded summary, `SHA256SUMS.txt`, and a final
+`PACKAGE_COMPLETE.json`; it refuses dirty source, an existing target, a
+nonempty or linked parent, and output inside the checkout. See
+[docs/REPRODUCING.md](docs/REPRODUCING.md) for Linux syntax, package contents,
+and the independent-reproduction claim boundary.
 
 The fixed pipeline has 12 sequential tasks; task 6 fails on its first call. The
 asserted scenario executes 18 child processes for a naive full restart and 13
@@ -209,6 +222,7 @@ See [docs/REPRODUCING.md](docs/REPRODUCING.md) for the evidence boundary.
 - [Evidence format](docs/EVIDENCE_FORMAT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Recovery example](examples/recovery_pipeline/README.md)
+- [Engineering case study](docs/ENGINEERING_CASE_STUDY.md)
 - [Limitations](LIMITATIONS.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)

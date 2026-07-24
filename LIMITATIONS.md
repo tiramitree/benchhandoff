@@ -12,7 +12,7 @@ distributed workflow engine.
   systems do not have a v0.1 start-token implementation and fail closed after
   launch rather than proceeding without a stable child identity.
 - The checked-in CI matrix is not evidence of an online CI run. Current observed
-  validation is local Windows/Python 3.12.13 only.
+  validation is local Windows/Python 3.12.10 only.
 
 ## Execution isolation
 

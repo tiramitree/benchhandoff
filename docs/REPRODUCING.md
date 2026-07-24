@@ -42,19 +42,46 @@ a pass.
 
 ## Reproduce the synthetic records
 
-Create a new evidence directory; the output files must not already exist:
+Use the single package entrypoint from a clean exact checkout. It refuses a
+dirty source tree, an existing output path, and any output inside the checkout.
+On Linux:
 
 ```bash
-evidence_root="$(mktemp -d)"
-PYTHONPATH=src python benchmarks/synthetic/run_pipeline_comparison.py \
-  --output "$evidence_root/pipeline-comparison.json"
-PYTHONPATH=src python benchmarks/synthetic/run_benchmark.py \
-  --output "$evidence_root/focused-recovery.json"
-sha256sum "$evidence_root"/*.json
-python -c 'import json,pathlib,sys; r=pathlib.Path(sys.argv[1]); h=sys.argv[2]; d=[json.loads((r/n).read_text(encoding="utf-8")) for n in ("pipeline-comparison.json","focused-recovery.json")]; assert all(x["source_git_clean"] is True and x["source_git_commit"] == h for x in d)' "$evidence_root" "$(git rev-parse HEAD)"
+evidence_parent="$(mktemp -d)"
+PYTHONPATH=src python benchmarks/synthetic/reproduce.py \
+  --output-dir "$evidence_parent/package"
 ```
 
-On PowerShell, create a unique directory under `[IO.Path]::GetTempPath()` and use `Get-FileHash -Algorithm SHA256`; do not write the first record into the checkout, because that would make the second record report a dirty source tree.
+On PowerShell:
+
+```powershell
+$evidenceParent = New-Item -ItemType Directory -Path (
+  Join-Path ([IO.Path]::GetTempPath()) ("benchhandoff-" + [guid]::NewGuid())
+)
+$env:PYTHONPATH = "src"
+python benchmarks\synthetic\reproduce.py `
+  --output-dir (Join-Path $evidenceParent.FullName "package")
+```
+
+The new package contains:
+
+- `focused-recovery.json`;
+- `pipeline-comparison.json`;
+- `summary.json`, which binds the source commit, bounded environment, record
+  hashes, and asserted synthetic claims; and
+- `SHA256SUMS.txt`, which hashes all three JSON records; and
+- `PACKAGE_COMPLETE.json`, written last, which binds the manifest identity and
+  required file list.
+
+The entrypoint requires a newly created, empty, caller-private parent directory;
+it rejects symlink or reparse-point parents and rechecks the parent identity
+before writing. This narrows accidental path races but is not a defense against
+a privileged concurrent attacker. It validates the exact assertions and
+re-hashes every record after writing. `PACKAGE_COMPLETE.json` is written last;
+a directory without a valid completion record, exact file set, and verified
+manifest is incomplete and must not be cited or submitted. The script never
+writes evidence into the checkout, because doing so would make later provenance
+observe a dirty source tree.
 
 The pipeline comparison is expected to assert 18 child calls for naive full
 restart versus 13 for BenchHandoff resume, with five versus zero repeated
@@ -68,9 +95,9 @@ A useful report contains:
 
 - the exact commit or released version;
 - operating system and Python implementation/version;
-- the exact commands;
+- the exact reproduction command;
 - test pass/fail/error/skip counts;
-- SHA-256 values for the raw synthetic JSON records;
+- the complete `SHA256SUMS.txt` values for the bounded JSON records;
 - deviations from this guide; and
 - a link to immutable evidence when one exists.
 
