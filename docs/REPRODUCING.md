@@ -32,8 +32,9 @@ environment dump, or other identifying value.
 From the repository root:
 
 ```bash
+python tools/verify_external_evidence.py
 PYTHONPATH=src python -m unittest discover -s tests -v
-python -m compileall -q src tests benchmarks examples
+python -m compileall -q src tests tools benchmarks examples
 ```
 
 On PowerShell, set `$env:PYTHONPATH = "src"` first. Report passes, failures,
@@ -133,4 +134,7 @@ with new synthetic inputs and share only the bounded report fields listed above.
 Use the structured reproduction-report issue after the repository is public.
 Submitting a report documents one attempt; it does not by itself prove
 production use, broad compatibility, security, scientific validity, or ongoing
-adoption.
+adoption. It also does not change a public count. Only an outside report that
+meets [the external-evidence rules](EXTERNAL_EVIDENCE.md), receives human
+review, and is merged as a verified record in `EXTERNAL_EVIDENCE.json` counts
+as an independent reproduction.

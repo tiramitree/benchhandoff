@@ -199,7 +199,11 @@ agent runtime.
 
 It has **not** been deployed in an agent stack, integrated with Genie Sim,
 validated on a GPU workload, adopted by an external user, or run in public CI.
+The canonical external-evidence ledger therefore reports zero independent
+reproductions, independent users, institutional adopters, and third-party
+reviews; an opened Issue cannot change those counts.
 The next meaningful evidence is therefore external: a licensed public release,
 online cross-platform results, one bounded independent reproduction, and a
 real upstream or adapter use case. Until those events exist, they remain goals,
-not résumé claims.
+not résumé claims. See
+[the ledger taxonomy and review rules](EXTERNAL_EVIDENCE.md).

@@ -1,0 +1,83 @@
+name: External evidence report
+description: Propose one public independent-use, institutional-adoption, or third-party-review record.
+title: "[External evidence] "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form proposes evidence for human review. Opening it does not create
+        an adoption count. Only a verified record merged into
+        EXTERNAL_EVIDENCE.json counts. Do not submit raw runs, logs, private
+        inputs, production details, absolute paths, credentials, tokens, or
+        non-consensual personal information.
+  - type: dropdown
+    id: evidence_type
+    attributes:
+      label: Evidence class
+      options:
+        - Independent user
+        - Institutional adopter
+        - Third-party technical review
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Exact source commit
+      description: Give the full 40-character lowercase commit SHA you used or reviewed.
+      placeholder: "40 lowercase hexadecimal characters"
+    validations:
+      required: true
+  - type: input
+    id: subject
+    attributes:
+      label: Public identity or organization
+      description: Give the public handle or authorized organization name that may appear in the ledger.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Concrete bounded use or review
+      description: State what was used or reviewed and what this evidence does not establish.
+    validations:
+      required: true
+  - type: input
+    id: evidence_url
+    attributes:
+      label: Public evidence URL
+      description: Provide a stable public HTTPS page under your control or authority; do not include secrets or private data.
+      placeholder: "https://..."
+    validations:
+      required: true
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Relationship to the maintainer or project
+      options:
+        - No affiliation, payment, employment, client/vendor, investment, course/lab, or family relationship
+        - A relationship exists and is disclosed below
+    validations:
+      required: true
+  - type: textarea
+    id: relationship_details
+    attributes:
+      label: Relationship details
+      description: Write "None" or disclose every relevant relationship. Affiliated evidence remains useful but is not counted as independent.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Consent and claim boundary
+      options:
+        - label: I am authorized to make this public statement and consent to listing the submitted public identity and evidence URL.
+          required: true
+        - label: I manually reviewed this submission and removed secrets, private data, raw logs, and non-consensual personal information.
+          required: true
+        - label: I understand this Issue does not count unless a human-reviewed record is merged into EXTERNAL_EVIDENCE.json.
+          required: true
+        - label: I understand that stars, forks, downloads, installs, views, and automated activity are not adoption evidence.
+          required: true

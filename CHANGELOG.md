@@ -37,6 +37,9 @@ and no external adoption is claimed.
   partial-output/quarantine observations.
 - Optional evidence-bound resume that rejects a stale decision before the first
   transition, with a focused synthetic drift/rejection/refresh invariant.
+- A canonical zero-baseline external-evidence ledger, strict structural and
+  count validator, relationship/consent-aware Issue forms, and documented
+  review, deduplication, and retraction rules.
 
 ### Security
 

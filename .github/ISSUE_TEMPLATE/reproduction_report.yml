@@ -75,6 +75,22 @@ body:
       description: Link only to manually reviewed, non-sensitive evidence.
     validations:
       required: false
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Relationship to the maintainer or project
+      options:
+        - No affiliation, payment, employment, client/vendor, investment, course/lab, or family relationship
+        - A relationship exists and is disclosed below
+    validations:
+      required: true
+  - type: textarea
+    id: relationship_details
+    attributes:
+      label: Relationship details
+      description: Write "None" or disclose every relevant relationship. Affiliated attempts remain useful but are not counted as independent.
+    validations:
+      required: true
   - type: checkboxes
     id: boundary
     attributes:
@@ -83,4 +99,8 @@ body:
         - label: I manually reviewed the submitted material and removed private or identifying data.
           required: true
         - label: I understand this report documents one attempt and is not an adoption or production-use claim.
+          required: true
+        - label: I consent to listing my public GitHub identity and evidence link in EXTERNAL_EVIDENCE.json if the attempt is independently verified.
+          required: true
+        - label: I understand this Issue does not count unless a human-reviewed record is merged into EXTERNAL_EVIDENCE.json.
           required: true

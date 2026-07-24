@@ -242,6 +242,7 @@ or attempt count, then refreshes the decision and completes. It remains at
 
 ```powershell
 $env:PYTHONPATH = "src"
+python tools\verify_external_evidence.py
 python -m unittest discover -s tests -v
 ```
 
@@ -254,9 +255,16 @@ the failure-to-resume example, and uploads only those tested bytes. It is
 license-gated and remains a proposed plan until public workflow URLs exist.
 
 After publication, structured issue forms can record reproducible bugs and
-bounded independent reproduction attempts. Repository views, stars, downloads,
-self-authored examples, and CI runs are not described as external adoption.
-See [docs/REPRODUCING.md](docs/REPRODUCING.md) for the evidence boundary.
+bounded independent reproduction attempts, independent use, institutional
+adoption, and third-party review. An opened form does not create a count.
+Only a human-reviewed record merged into the canonical ledger does.
+
+The current verified public baseline is zero independent reproductions, zero
+independent users, zero institutional adopters, and zero third-party reviews.
+Repository views, stars, forks, downloads, installs, self-authored examples,
+and CI runs are not described as external adoption. See
+[docs/EXTERNAL_EVIDENCE.md](docs/EXTERNAL_EVIDENCE.md) for the taxonomy,
+review, deduplication, retraction, and validator boundary.
 
 ## Project documents
 
@@ -264,6 +272,7 @@ See [docs/REPRODUCING.md](docs/REPRODUCING.md) for the evidence boundary.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Recovery example](examples/recovery_pipeline/README.md)
 - [Engineering case study](docs/ENGINEERING_CASE_STUDY.md)
+- [External evidence ledger](docs/EXTERNAL_EVIDENCE.md)
 - [Limitations](LIMITATIONS.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)

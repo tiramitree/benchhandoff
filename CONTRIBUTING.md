@@ -29,15 +29,17 @@ dependencies. From the repository root:
 
 ```powershell
 $env:PYTHONPATH = "src"
+python tools\verify_external_evidence.py
 python -m unittest discover -s tests -v
-python -m compileall -q src tests benchmarks examples
+python -m compileall -q src tests tools benchmarks examples
 ```
 
 On a POSIX shell:
 
 ```bash
+python tools/verify_external_evidence.py
 PYTHONPATH=src python -m unittest discover -s tests -v
-python -m compileall -q src tests benchmarks examples
+python -m compileall -q src tests tools benchmarks examples
 ```
 
 Tests that create symlinks can be skipped when the operating system or account
@@ -72,6 +74,20 @@ Use precise language:
 - `independently reproduced` only when an identifiable outside reproduction is
   linkable; and
 - `released` or `published` only after the public artifacts exist.
+
+## External-evidence changes
+
+An Issue, Pull Request, CI run, star, fork, download, install, or maintainer
+example does not create an adoption count. A proposed record must meet the
+definitions in [docs/EXTERNAL_EVIDENCE.md](docs/EXTERNAL_EVIDENCE.md), disclose
+all relevant relationships, include explicit consent, use one public HTTPS
+evidence URL and one full source commit, and survive human review.
+
+Keep a retracted record with a date and reason instead of deleting it. After
+every ledger change, recompute the derived counts and run
+`python tools/verify_external_evidence.py`. The validator checks structure and
+arithmetic only; it does not establish identity, independence, truth, or live
+URL availability.
 
 ## Pull request checklist
 

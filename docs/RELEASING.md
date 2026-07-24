@@ -34,8 +34,9 @@ until those jobs complete.
 Also run:
 
 ```bash
+python tools/verify_external_evidence.py
 PYTHONPATH=src python -m unittest discover -s tests -v
-python -m compileall -q src tests benchmarks examples
+python -m compileall -q src tests tools benchmarks examples
 evidence_parent="$(mktemp -d)"
 evidence_root="$evidence_parent/package"
 expected_commit="$(git rev-parse HEAD)"
@@ -107,7 +108,8 @@ After all gates pass:
    limitations.
 
 Do not describe TestPyPI installation, repository views, downloads, issues, or
-self-authored examples as external adoption.
+self-authored examples as external adoption. Publication does not change the
+zero external-evidence baseline; only a later human-reviewed ledger record can.
 
 ## 7. Failure and rollback
 

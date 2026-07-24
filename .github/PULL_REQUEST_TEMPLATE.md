@@ -16,6 +16,9 @@ not run. Do not describe a proposed CI job as observed success.
       real-workload, external-adoption, or superiority evidence.
 - [ ] Documentation distinguishes local validation, public CI, released
       artifacts, and independent reproduction.
+- [ ] Any external-evidence record meets the public taxonomy, relationship,
+      consent, source-commit, and URL rules; its derived counts pass
+      `python tools/verify_external_evidence.py`.
 
 ## Privacy and provenance
 

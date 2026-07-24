@@ -41,7 +41,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Compile source and validation assets
-        run: python -m compileall -q src tests benchmarks examples
+        run: python -m compileall -q src tests tools benchmarks examples
+
+      - name: Verify external-evidence ledger
+        run: python tools/verify_external_evidence.py
 
       - name: Run unit tests
         run: python -m unittest discover -s tests -v

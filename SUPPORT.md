@@ -4,9 +4,10 @@ BenchHandoff is currently unpublished and has no support SLA, guaranteed
 response time, compatibility promise, or production-support commitment.
 
 After publication, use the repository's structured issue forms for reproducible
-bugs and independent reproduction reports. Use the security process in
-[SECURITY.md](SECURITY.md) for vulnerabilities. General questions should be
-kept to a minimal, public, non-sensitive example.
+bugs, independent reproduction reports, and proposed external-use or review
+evidence. Use the security process in [SECURITY.md](SECURITY.md) for
+vulnerabilities. General questions should be kept to a minimal, public,
+non-sensitive example.
 
 Before filing an issue:
 
@@ -26,3 +27,7 @@ substitute for that reduction.
 Support questions do not establish external adoption, production use, or a
 compatibility guarantee. A response may explain the documented boundary rather
 than add a new feature or recovery path.
+
+Opening an external-evidence Issue also does not create a count. Only a
+human-reviewed record merged into `EXTERNAL_EVIDENCE.json` counts under
+[the public ledger rules](docs/EXTERNAL_EVIDENCE.md).
