@@ -102,6 +102,12 @@ commit but cannot authenticate its own download source. A successful verifier
 run proves internal consistency with these synthetic assertions, not source
 trust, elapsed-time performance, production use, security, or outside adoption.
 
+The focused record is also expected to assert that changing a partial output
+after `inspect` makes the decision stale and that rejection leaves state,
+events, quarantine, the partial output, and attempt count unchanged. A refreshed
+decision must then complete and verify. This is a local synthetic invariant, not
+an authentication, concurrency, or production-security claim.
+
 The pipeline comparison is expected to assert 18 child calls for naive full
 restart versus 13 for BenchHandoff resume, with five versus zero repeated
 successful tasks and the same final output hash. These are deterministic counts

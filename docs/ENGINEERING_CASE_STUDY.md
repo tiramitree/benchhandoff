@@ -10,6 +10,7 @@ fast, but it cannot answer the questions that matter after such a failure:
 - Which completed outputs still match the bytes that were verified?
 - Did an apparently incomplete task run, and could it still be alive?
 - Is a retry safe, or would it silently duplicate side effects?
+- Did the evidence approved for recovery stay byte-identical until execution?
 - What evidence was preserved instead of rewritten?
 
 BenchHandoff is a deliberately narrow answer for a flat, sequential batch. It
@@ -50,7 +51,10 @@ and prior evidence           retry budget, logs,
 
 This is intentionally less flexible than a general workflow engine. The
 restriction makes it possible to state and test exactly what a resume may
-preserve, quarantine, or retry.
+preserve, quarantine, or retry. For a reviewed recovery, `inspect` derives a
+second invariant: the resume is authorized only while the exact evidence,
+relevant inputs, completed outputs, and partial-output observations still hash
+to the reviewed decision SHA-256.
 
 ## A concrete failure timeline
 
@@ -63,12 +67,15 @@ first call after tasks 1–5 have completed.
 3. Task 6 writes a partial declared output and exits `75`.
 4. The run becomes `failed`; no `bundle.json` is created. The partial file is
    not promoted into verified output evidence.
-5. `resume` reloads the exact plan and state, reconciles any modeled pending
-   event, re-verifies tasks 1–5, checks child liveness and retry limits, and
-   identifies task 6 as the first incomplete task.
-6. The partial regular file moves into `quarantine/` with its identity
+5. `inspect` performs the load, completed-prefix, liveness, and retry checks
+   without reconciling or writing evidence. It emits a decision SHA-256 over
+   the evidence files, suite, completed outputs, next inputs, partial outputs,
+   and deterministic quarantine candidates.
+6. Bound `resume` requires that digest, recomputes it after load and immediately
+   before its first transition, and only then identifies task 6 as recoverable.
+7. The partial regular file moves into `quarantine/` with its identity
    preserved. A second attempt starts, then tasks 7–12 run in order.
-7. Only after every declared output verifies does the runner seal
+8. Only after every declared output verifies does the runner seal
    `bundle.json`; a fresh `verify` invocation re-hashes the complete declared
    evidence set.
 
@@ -76,7 +83,10 @@ The package entrypoint in `benchmarks/synthetic/reproduce.py` executes both the
 focused interruption case and the 12-task comparison from one clean commit. It
 refuses dirty source, overwrite, and output inside the checkout; then it writes
 two raw JSON records, a bounded summary, `SHA256SUMS.txt`, and a
-`PACKAGE_COMPLETE.json` record written last.
+`PACKAGE_COMPLETE.json` record written last. The focused fixture deliberately
+changes its partial output after inspection. The stale decision must be
+rejected while state, events, quarantine, partial output, and attempt count stay
+unchanged; a refreshed decision then completes and verifies.
 
 ## What the synthetic comparison measures
 
@@ -94,7 +104,7 @@ Maintainer-generated records are also not independent reproduction or adoption.
 The exact commit, environment, assertions, record hashes, and claim boundary
 live in each reproduction package rather than in this narrative alone.
 
-## Three choices that deliberately fail closed
+## Four choices that deliberately fail closed
 
 ### 1. An unresolved launch guard blocks automatic recovery
 
@@ -126,6 +136,20 @@ an extra file would make the bundle easier to accept, but it would also leave
 unclear whether the extra artifact came from a crashed write, a task, or later
 tampering. v0.1 refuses to auto-delete or silently exclude it.
 
+### 4. A reviewed recovery decision becomes stale on byte drift
+
+`inspect` does not write an approval record into the run. It returns a canonical
+view whose digest can be carried by a human review, ticket, or higher-level
+agent approval step. If a log, state file, relevant input, completed output, or
+partial output changes, the digest changes and bound resume stops before the
+`run_resumed` event, quarantine move, or child launch.
+
+This closes a practical stale-approval gap, not the entire concurrency problem.
+The digest is unsigned and optional, and there is still a small
+check-to-transition race. BenchHandoff has no global lock and assumes one
+trusted writer; the interface must not be described as cryptographic
+authorization or hostile-writer protection.
+
 ## A feature that was not shipped
 
 A diagnostic-export command was prototyped during local hardening and then
@@ -146,6 +170,7 @@ not ready merely because its happy path works.
 | Completed-prefix and recovery rules | `src/benchhandoff/engine.py`, `tests/test_state_machine_hardening.py`, `tests/test_transition_recovery.py` | Correctness outside tested states |
 | Root-entry, regular-file-set, path, and non-overwrite boundaries | `src/benchhandoff/storage.py`, `tests/test_storage_hardening.py`, `tests/test_audit_regressions.py` | Protection from a privileged concurrent attacker or a complete Windows reparse-point audit |
 | Fixed failure-to-resume behavior | `examples/recovery_pipeline/`, `tests/test_recovery_example.py` | Real model or simulator integration |
+| Stale reviewed-decision refusal without mutation | `tests/test_resume_decision.py`, focused reproduction-package JSON | Signature security, locking, or hostile concurrency |
 | 18→13 and 5→0 counts | Reproduction-package JSON plus `SHA256SUMS.txt` | Wall-clock speedup or external use |
 | Record semantics | `docs/EVIDENCE_FORMAT.md`, `docs/ARCHITECTURE.md` | Signed provenance or trusted time |
 | Known failure and threat boundaries | `LIMITATIONS.md` | Security certification |
@@ -167,8 +192,10 @@ clean-room boundary is recorded in `CLEAN_ROOM.md`.
 
 The same failure shape appears in agent evaluations, model benchmarks, and
 embodied-simulation batches: expensive ordered stages, partial outputs, retries,
-and pressure to preserve evidence. BenchHandoff demonstrates systems reasoning
-about that shape.
+and pressure to preserve evidence. Approval-gated agent harnesses add one more
+problem: an approval can become stale before execution. BenchHandoff
+demonstrates systems reasoning about both shapes without claiming to be a full
+agent runtime.
 
 It has **not** been deployed in an agent stack, integrated with Genie Sim,
 validated on a GPU workload, adopted by an external user, or run in public CI.

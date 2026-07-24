@@ -43,6 +43,7 @@ _MAX_FILE_BYTES = {
 }
 _VERIFIED_CLAIMS = {
     "focused_fail_quarantine_resume_verify": True,
+    "focused_stale_resume_decision_rejected_without_mutation": True,
     "pipeline_child_calls_naive_vs_resume": [18, 13],
     "pipeline_duplicate_successes_naive_vs_resume": [5, 0],
     "pipeline_final_output_identity_equal": True,
@@ -93,6 +94,7 @@ _FOCUSED_KEYS = _PROVENANCE_KEYS | {
     "resume_elapsed_ms",
     "resume_status",
     "verify_status",
+    "resume_decision",
     "final_output",
 }
 _PIPELINE_KEYS = _PROVENANCE_KEYS | {
@@ -132,6 +134,22 @@ _COMPARISON_KEYS = {
     "avoided_duplicate_successful_executions",
 }
 _FILE_IDENTITY_KEYS = {"sha256", "size"}
+_RESUME_DECISION_KEYS = {
+    "stale_decision_blocked",
+    "decision_changed_after_partial_output_drift",
+    "state_unchanged_after_rejection",
+    "events_unchanged_after_rejection",
+    "quarantine_unchanged_after_rejection",
+    "partial_output_preserved_after_rejection",
+    "attempts_before_rejection",
+    "attempts_after_rejection",
+    "refreshed_decision_resume_status",
+}
+_RESUME_DECISION_BOOLEAN_KEYS = _RESUME_DECISION_KEYS - {
+    "attempts_before_rejection",
+    "attempts_after_rejection",
+    "refreshed_decision_resume_status",
+}
 _PIPELINE_ASSERTION_KEYS = {
     "naive_subprocess_calls",
     "ledger_subprocess_calls",
@@ -417,6 +435,32 @@ def _validate_focused(record: dict[str, object], source_commit: str) -> None:
     if set(record) != _FOCUSED_KEYS:
         raise ReproductionPackageError(f"{benchmark} field set is invalid")
     _validate_file_identity(record.get("final_output"), benchmark)
+    decision = record.get("resume_decision")
+    expected_decision = {
+        "stale_decision_blocked": True,
+        "decision_changed_after_partial_output_drift": True,
+        "state_unchanged_after_rejection": True,
+        "events_unchanged_after_rejection": True,
+        "quarantine_unchanged_after_rejection": True,
+        "partial_output_preserved_after_rejection": True,
+        "attempts_before_rejection": 1,
+        "attempts_after_rejection": 1,
+        "refreshed_decision_resume_status": "completed",
+    }
+    if (
+        not isinstance(decision, dict)
+        or set(decision) != _RESUME_DECISION_KEYS
+        or decision != expected_decision
+        or any(
+            decision.get(key) is not True
+            for key in _RESUME_DECISION_BOOLEAN_KEYS
+        )
+        or type(decision.get("attempts_before_rejection")) is not int
+        or type(decision.get("attempts_after_rejection")) is not int
+    ):
+        raise ReproductionPackageError(
+            f"{benchmark} resume-decision assertions failed"
+        )
     if any(
         not isinstance(record.get(key), (int, float))
         or isinstance(record.get(key), bool)

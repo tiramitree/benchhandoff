@@ -13,10 +13,16 @@ Run it from a copied directory so the checked-in example remains unchanged:
 cp -R examples/recovery_pipeline demo-recovery
 mkdir -p runs
 benchhandoff start demo-recovery/suite.toml --run-dir runs/recovery || test $? -eq 20
-benchhandoff resume runs/recovery
+decision_sha="$(
+  benchhandoff inspect runs/recovery |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["decision_sha256"])'
+)"
+benchhandoff resume runs/recovery --expected-decision-sha256 "$decision_sha"
 benchhandoff verify runs/recovery
 ```
 
 Inspect `runs/recovery/state.json`, `runs/recovery/quarantine/`, and
-`runs/recovery/bundle.json`. This is deterministic local demonstration
-evidence, not a production or third-party benchmark.
+`runs/recovery/bundle.json`. The explicit decision token makes this example an
+approval-gated resume; plain `resume` remains supported. The token is a local
+content binding, not a signature or lock. This is deterministic local
+demonstration evidence, not a production or third-party benchmark.

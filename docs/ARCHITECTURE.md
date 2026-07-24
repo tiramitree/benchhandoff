@@ -25,7 +25,11 @@ suite.toml + declared seed files
      failed state    verify inputs/outputs
      no bundle        + completed state
           |               |
-          +---- resume ---+
+          v               |
+   inspect (read only)     |
+   decision SHA-256        |
+          |               |
+          +-- bound resume+
           | quarantine partials
           | append attempt
           v
@@ -65,6 +69,32 @@ Before `Popen`, the attempt is durably marked with a child launch guard. After a
 stable Windows or Linux process-start token is captured, state is updated with
 the PID/token and the guard is disarmed. An unresolved guard is intentionally
 not auto-recovered because the runner cannot prove whether the child ran.
+
+## Review-to-execution binding
+
+`inspect` is a mutation-free eligibility check for stable run evidence. It
+re-validates the completed prefix, liveness and retry limits, then returns a
+canonical `benchhandoff-resume-decision` object. Its SHA-256 binds:
+
+- `plan.json`, `state.json`, `events.jsonl`, every current log and quarantine
+  artifact, and `bundle.json` when present;
+- the exact `suite.toml`;
+- current completed-output identities;
+- the next task's verified input identities; and
+- presence or identities for unverified outputs and their deterministic
+  quarantine destinations.
+
+`resume --expected-decision-sha256` recomputes this view after load and again
+immediately before the first transition. A mismatch exits before changing
+state, appending an event, moving a partial output, or launching a child.
+Inspection refuses a pending event/state transition because reconciling it
+would mutate the evidence being reviewed; unbound resume retains the existing
+reconciliation behavior.
+
+The decision is deliberately ephemeral and has no timestamp. It is a content
+binding, not authentication, a signature, a cross-process lock, or a lease.
+Runs still assume one trusted writer, and a small check-to-mutation race remains
+outside the v0.1 threat model.
 
 ## Exact evidence topology
 

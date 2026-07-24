@@ -59,6 +59,17 @@ def _focused(commit: str) -> dict[str, object]:
         "resume_elapsed_ms": 10.25,
         "resume_status": "completed",
         "verify_status": "verified",
+        "resume_decision": {
+            "stale_decision_blocked": True,
+            "decision_changed_after_partial_output_drift": True,
+            "state_unchanged_after_rejection": True,
+            "events_unchanged_after_rejection": True,
+            "quarantine_unchanged_after_rejection": True,
+            "partial_output_preserved_after_rejection": True,
+            "attempts_before_rejection": 1,
+            "attempts_after_rejection": 1,
+            "refreshed_decision_resume_status": "completed",
+        },
         "final_output": {"sha256": "e" * 64, "size": 113},
     }
 
@@ -204,6 +215,12 @@ class ReproductionPackageTests(unittest.TestCase):
         self.assertEqual(
             summary["verified_claims"]["pipeline_child_calls_naive_vs_resume"],
             [18, 13],
+        )
+        self.assertIs(
+            summary["verified_claims"][
+                "focused_stale_resume_decision_rejected_without_mutation"
+            ],
+            True,
         )
 
     def test_verifier_refuses_tampered_record(self) -> None:
@@ -396,6 +413,33 @@ class ReproductionPackageTests(unittest.TestCase):
                         pipeline_runner=lambda: _pipeline(commit),
                     )
             self.assertFalse(output.exists())
+
+    def test_resume_decision_invariant_failure_does_not_create_output(self) -> None:
+        module = _load_module()
+        commit = "b" * 40
+        invalid = _focused(commit)
+        invalid["resume_decision"]["state_unchanged_after_rejection"] = 1
+        with WorkspaceTemporaryDirectory(
+            prefix="reproduction-decision-invalid-"
+        ) as temporary:
+            source, output = _paths(Path(temporary))
+            with mock.patch.object(
+                module,
+                "benchmark_provenance",
+                return_value=_provenance(commit, clean=True),
+            ):
+                with self.assertRaisesRegex(
+                    module.ReproductionPackageError,
+                    "resume-decision assertions failed",
+                ):
+                    module.build_reproduction_package(
+                        output,
+                        repository_root=source,
+                        focused_runner=lambda: invalid,
+                        pipeline_runner=lambda: _pipeline(commit),
+                    )
+            self.assertFalse(output.exists())
+
     def test_invariant_failure_does_not_create_output(self) -> None:
         module = _load_module()
         commit = "c" * 40

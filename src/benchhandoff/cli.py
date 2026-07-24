@@ -8,7 +8,7 @@ import sys
 from collections.abc import Sequence
 
 from benchhandoff import __version__
-from benchhandoff.engine import resume_run, start_run, verify_run
+from benchhandoff.engine import inspect_resume, resume_run, start_run, verify_run
 from benchhandoff.errors import BenchHandoffError
 
 
@@ -34,6 +34,16 @@ def _parser() -> argparse.ArgumentParser:
 
     resume = subcommands.add_parser("resume", help="resume an incomplete run")
     resume.add_argument("run_dir", help="existing run evidence directory")
+    resume.add_argument(
+        "--expected-decision-sha256",
+        help="resume only if the current read-only decision has this SHA-256",
+    )
+
+    inspect = subcommands.add_parser(
+        "inspect",
+        help="emit a mutation-free resume decision and its SHA-256",
+    )
+    inspect.add_argument("run_dir", help="existing run evidence directory")
 
     verify = subcommands.add_parser("verify", help="verify a completed bundle")
     verify.add_argument("run_dir", help="completed run evidence directory")
@@ -57,9 +67,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             _emit(result.as_dict())
             return 0 if result.status == "completed" else 20
         if arguments.command == "resume":
-            result = resume_run(arguments.run_dir)
+            result = resume_run(
+                arguments.run_dir,
+                expected_decision_sha256=arguments.expected_decision_sha256,
+            )
             _emit(result.as_dict())
             return 0 if result.status == "completed" else 20
+        if arguments.command == "inspect":
+            _emit(inspect_resume(arguments.run_dir))
+            return 0
         verification = verify_run(arguments.run_dir)
         _emit(verification)
         return 0

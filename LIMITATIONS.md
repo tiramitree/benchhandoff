@@ -68,6 +68,13 @@ in scope.
 - `events.jsonl` is rewritten in full for each transition. Work is linear in the
   existing log per transition and quadratic over a very long run. v0.1 bounds
   it to 64 MiB, 100,000 records, and 256 KiB per record.
+- `inspect` decisions are optional content bindings. Plain `resume` remains
+  available and can reconcile modeled pending events; policy enforcement
+  therefore depends on the caller supplying `--expected-decision-sha256`.
+- A bound resume rechecks its decision immediately before the first transition,
+  but there is still a check-to-mutation race. The digest is not a secret,
+  signature, authorization service, cross-process lock, or defense against a
+  privileged or hostile concurrent writer.
 - Runs assume one trusted writer. There is no cross-process lock, remote lease,
   distributed storage, remote worker, scheduler, or multi-host clock model.
 
@@ -77,9 +84,9 @@ in scope.
   correctness, provenance ownership, or absence of malicious content.
 - The environment record is descriptive and incomplete. It does not capture
   packages, drivers, containers, hardware, locale, or environment variables.
-- `plan.json` records absolute run, suite, and suite-file paths, and
-  `bundle.json` records the absolute suite-file path. Those values can expose a
-  local username, drive letter, mount point, or other host layout. Treat run
+- `plan.json` and the transient resume decision record absolute run, suite, and
+  suite-file paths, and `bundle.json` records the absolute suite-file path.
+  Those values can expose a local username, drive letter, mount point, or other host layout. Treat run
   evidence as potentially identifying. Editing records in place invalidates
   their evidence bindings and is not a redaction mechanism.
 - Logs may contain data emitted by commands. BenchHandoff does not redact

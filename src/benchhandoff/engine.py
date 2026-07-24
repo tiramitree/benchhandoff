@@ -65,6 +65,7 @@ MAX_EVENT_BYTES = 256 * 1024
 MAX_EVENT_COUNT = 100_000
 MAX_ATTEMPTS_PER_TASK = 4
 MAX_TOTAL_ATTEMPTS = 256
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 
 @dataclass(frozen=True)
@@ -1864,6 +1865,221 @@ def _assert_resume_attempt_budget(context: _RunContext) -> None:
         return
 
 
+def _resume_decision_sha256(decision: dict[str, Any]) -> str:
+    """Hash a resume decision without its self-referential digest field."""
+
+    body = dict(decision)
+    body.pop("decision_sha256", None)
+    return hashlib.sha256(canonical_json_bytes(body)).hexdigest()
+
+
+def _current_output_observation(
+    context: _RunContext,
+    task: TaskSpec,
+) -> list[dict[str, Any]]:
+    """Describe every output of an incomplete task without changing it."""
+
+    observations: list[dict[str, Any]] = []
+    for relative in task.outputs:
+        candidate = resolve_member(
+            context.suite.root,
+            relative,
+            label=f"unverified output {relative!r}",
+        )
+        if not os.path.lexists(candidate):
+            observations.append({"path": relative, "status": "absent"})
+            continue
+        identity = file_identity(candidate, label=f"unverified output {relative!r}")
+        observations.append({"path": relative, "status": "present", **identity})
+    return observations
+
+
+def _quarantine_observation(
+    context: _RunContext,
+    task: TaskSpec,
+) -> list[dict[str, Any]]:
+    """Describe deterministic recovery destinations for the next task."""
+
+    task_state = context.state["tasks"][task.task_id]
+    if task_state["status"] not in {"running", "failed"}:
+        return []
+    attempts = task_state["attempts"]
+    if not attempts:
+        raise EvidenceError(f"incomplete task {task.task_id!r} has no attempt record")
+    attempt_number = attempts[-1]["number"]
+    observations: list[dict[str, Any]] = []
+    for relative in task.outputs:
+        artifact = (
+            f"{QUARANTINE_DIRECTORY}/"
+            f"{_quarantine_name(task.task_id, attempt_number, relative)}"
+        )
+        candidate = resolve_member(
+            context.run_root,
+            artifact,
+            label=f"quarantine candidate for {relative!r}",
+        )
+        if not os.path.lexists(candidate):
+            observations.append(
+                {
+                    "source": relative,
+                    "artifact": artifact,
+                    "status": "absent",
+                }
+            )
+            continue
+        identity = file_identity(
+            candidate,
+            label=f"quarantine candidate for {relative!r}",
+        )
+        observations.append(
+            {
+                "source": relative,
+                "artifact": artifact,
+                "status": "present",
+                **identity,
+            }
+        )
+    return observations
+
+
+def _build_resume_decision(context: _RunContext) -> dict[str, Any]:
+    """Build a deterministic, mutation-free authorization view of one run."""
+
+    if _event_transition_status(context.run_root, context.plan, context.state) != "stable":
+        raise EvidenceError(
+            "resume decision requires stable event/state evidence; "
+            "resume without a decision token may reconcile the pending transition"
+        )
+    _verify_completed_prefix(context)
+    _assert_recovery_liveness(context)
+
+    completed_prefix: list[str] = []
+    completed_outputs: list[dict[str, Any]] = []
+    next_task_spec: TaskSpec | None = None
+    for task in context.suite.tasks:
+        task_state = context.state["tasks"][task.task_id]
+        if task_state["status"] == "completed":
+            completed_prefix.append(task.task_id)
+            for relative in task.outputs:
+                identity = member_identity(
+                    context.suite.root,
+                    relative,
+                    label=f"completed output {relative!r}",
+                )
+                completed_outputs.append(
+                    {"task_id": task.task_id, "path": relative, **identity}
+                )
+            continue
+        next_task_spec = task
+        break
+
+    bundle_path = context.run_root / BUNDLE_FILE
+    bundle_exists = os.path.lexists(bundle_path)
+    if bundle_exists:
+        if next_task_spec is not None or context.state["status"] != "completed":
+            raise EvidenceError("bundle.json exists for a non-completed run")
+        action = "already-complete"
+    elif next_task_spec is None:
+        if context.state["status"] != "completed":
+            raise EvidenceError("all tasks are complete but run status is not completed")
+        action = "seal-completed-run"
+    else:
+        _assert_resume_attempt_budget(context)
+        next_status = context.state["tasks"][next_task_spec.task_id]["status"]
+        action = (
+            "recover-and-resume"
+            if next_status in {"running", "failed"}
+            else "resume"
+        )
+
+    evidence_paths = _artifact_paths(context.run_root)
+    if bundle_exists:
+        evidence_paths.append(BUNDLE_FILE)
+    evidence_files = [
+        {
+            "path": relative,
+            **member_identity(
+                context.run_root,
+                relative,
+                label=f"resume evidence {relative!r}",
+            ),
+        }
+        for relative in sorted(evidence_paths)
+    ]
+
+    next_task: dict[str, Any] | None = None
+    if next_task_spec is not None:
+        task_state = context.state["tasks"][next_task_spec.task_id]
+        verified_inputs = _expected_inputs(context, next_task_spec)
+        output_observations = _current_output_observation(context, next_task_spec)
+        quarantine = _quarantine_observation(context, next_task_spec)
+        output_by_path = {item["path"]: item for item in output_observations}
+        quarantine_by_source = {item["source"]: item for item in quarantine}
+        for relative in next_task_spec.outputs:
+            source_present = output_by_path[relative]["status"] == "present"
+            destination_present = (
+                quarantine_by_source.get(relative, {}).get("status") == "present"
+            )
+            if source_present and destination_present:
+                raise EvidenceError(
+                    "both unverified output and its quarantine destination exist "
+                    f"for {relative!r}"
+                )
+        next_task = {
+            "id": next_task_spec.task_id,
+            "current_status": task_state["status"],
+            "next_attempt": len(task_state["attempts"]) + 1,
+            "verified_inputs": [
+                {"path": relative, **identity}
+                for relative, identity in sorted(verified_inputs.items())
+            ],
+            "unverified_outputs": output_observations,
+            "quarantine_candidates": quarantine,
+        }
+
+    decision: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "benchhandoff-resume-decision",
+        "run_id": context.plan["run_id"],
+        "run_directory": str(context.run_root),
+        "action": action,
+        "completed_prefix": completed_prefix,
+        "completed_outputs": completed_outputs,
+        "next_task": next_task,
+        "suite_file": {
+            "path": str(context.suite.path),
+            **file_identity(context.suite.path, label="suite.toml"),
+        },
+        "evidence_files": evidence_files,
+    }
+    decision["decision_sha256"] = _resume_decision_sha256(decision)
+    return decision
+
+
+def _inspect_resume_checked(run_directory: Path | str) -> dict[str, Any]:
+    """Return a read-only resume decision bound to the current evidence bytes."""
+
+    context = _load_context(run_directory)
+    if os.path.lexists(context.run_root / BUNDLE_FILE):
+        verify_run(context.run_root)
+        context = _load_context(context.run_root)
+    return _build_resume_decision(context)
+
+
+def inspect_resume(run_directory: Path | str) -> dict[str, Any]:
+    """Inspect resume eligibility without reconciling or mutating run evidence."""
+
+    try:
+        return _inspect_resume_checked(run_directory)
+    except EvidenceError:
+        raise
+    except BenchHandoffError as exc:
+        raise EvidenceError(f"run evidence is invalid: {exc}") from exc
+    except (KeyError, IndexError, TypeError, ValueError, OSError) as exc:
+        raise EvidenceError(
+            f"run evidence could not be safely interpreted: {type(exc).__name__}: {exc}"
+        ) from exc
+
 def _execute_remaining(context: _RunContext, *, operation: str) -> RunResult:
     saw_incomplete = False
     for task in context.suite.tasks:
@@ -1966,10 +2182,28 @@ def start_run(suite_file: Path | str, run_directory: Path | str) -> RunResult:
         ) from exc
 
 
-def _resume_run_checked(run_directory: Path | str) -> RunResult:
+def _resume_run_checked(
+    run_directory: Path | str,
+    *,
+    expected_decision_sha256: str | None = None,
+) -> RunResult:
     """Resume the first incomplete task after revalidating all prior evidence."""
 
+    if expected_decision_sha256 is not None and (
+        not isinstance(expected_decision_sha256, str)
+        or _SHA256_PATTERN.fullmatch(expected_decision_sha256) is None
+    ):
+        raise EvidenceError(
+            "expected resume decision SHA-256 must be 64 lowercase hexadecimal characters"
+        )
     context = _load_context(run_directory)
+    if expected_decision_sha256 is not None:
+        actual_decision = _build_resume_decision(context)["decision_sha256"]
+        if actual_decision != expected_decision_sha256:
+            raise EvidenceError(
+                "resume decision is stale: expected "
+                f"{expected_decision_sha256}, got {actual_decision}"
+            )
     bundle_path = context.run_root / BUNDLE_FILE
     if os.path.lexists(bundle_path):
         if context.state["pending_event"] is not None:
@@ -1984,10 +2218,18 @@ def _resume_run_checked(run_directory: Path | str) -> RunResult:
             detail="run was already complete and remains verified",
         )
 
-    _reconcile_pending_event(context)
+    if expected_decision_sha256 is None:
+        _reconcile_pending_event(context)
     _verify_completed_prefix(context)
     _assert_recovery_liveness(context)
     _assert_resume_attempt_budget(context)
+    if expected_decision_sha256 is not None:
+        actual_decision = _build_resume_decision(context)["decision_sha256"]
+        if actual_decision != expected_decision_sha256:
+            raise EvidenceError(
+                "resume decision became stale before the first transition: expected "
+                f"{expected_decision_sha256}, got {actual_decision}"
+            )
     previous_status = context.state["status"]
     context.state["status"] = "running"
     context.state["last_error"] = None
@@ -1998,11 +2240,18 @@ def _resume_run_checked(run_directory: Path | str) -> RunResult:
     )
     return _execute_remaining(context, operation="resume")
 
-def resume_run(run_directory: Path | str) -> RunResult:
+def resume_run(
+    run_directory: Path | str,
+    *,
+    expected_decision_sha256: str | None = None,
+) -> RunResult:
     """Resume while converting damaged evidence into a stable evidence error."""
 
     try:
-        return _resume_run_checked(run_directory)
+        return _resume_run_checked(
+            run_directory,
+            expected_decision_sha256=expected_decision_sha256,
+        )
     except EvidenceError:
         raise
     except BenchHandoffError as exc:

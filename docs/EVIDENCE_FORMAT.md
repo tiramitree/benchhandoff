@@ -55,6 +55,27 @@ canonical record, and atomically replaces the complete file. Limits are 64 MiB
 for the log, 100,000 records, and 256 KiB per record. The final event-log
 identity is bound by both state and bundle.
 
+## Resume decision (CLI output, not a stored run record)
+
+`inspect` emits one canonical JSON object with kind
+`benchhandoff-resume-decision`. It contains the run id and directory, the
+proposed action, the completed task prefix and output identities, the exact
+suite identity, all current run-evidence file identities, and a next-task view
+when work remains. That view contains the task status and next attempt number,
+verified input identities, unverified output presence or identity, and the
+presence or identity of each deterministic quarantine candidate.
+
+`decision_sha256` is the SHA-256 of the same canonical object with that one
+self-referential field omitted. The decision is emitted to stdout and is not
+written into the run directory. Passing it to
+`resume --expected-decision-sha256` makes the resume conditional on an exact
+recomputation before any transition.
+
+A decision can only be issued for stable event/state evidence. It is a local
+byte-identity approval token, not a secret, signature, trusted timestamp,
+authorization service, or concurrency lock. Absolute run and suite paths in the
+object may be identifying and should not be published without review.
+
 ## `bundle.json`
 
 The one-time bundle contains:

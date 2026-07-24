@@ -12,9 +12,13 @@ scripts below remain diagnostics.
 partial declared output and terminates immediately with exit code `75`.
 BenchHandoff must leave the run failed and omit `bundle.json`.
 
-`run_benchmark.py` then calls `resume` on the same evidence directory. A passing
-run requires:
+`run_benchmark.py` first inspects the failed run, changes the partial output,
+and proves the reviewed decision is stale before refreshing it and calling
+bound `resume`. A passing run requires:
 
+- stale-decision rejection to leave state, events, quarantine, partial output,
+  and attempt count unchanged;
+- the refreshed decision SHA-256 to differ from the stale one;
 - the first partial output to be a hashed quarantine artifact;
 - a second child attempt to complete;
 - the final result to be a verified regular file;

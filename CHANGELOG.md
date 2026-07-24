@@ -32,6 +32,11 @@ and no external adoption is claimed.
   bounds, regular non-linked inputs, strict canonical JSON, all hash and record
   bindings, deterministic benchmark invariants, and an optional expected
   source commit.
+- A mutation-free `inspect` command that emits a deterministic resume decision
+  SHA-256 over current evidence, relevant inputs, completed outputs, and
+  partial-output/quarantine observations.
+- Optional evidence-bound resume that rejects a stale decision before the first
+  transition, with a focused synthetic drift/rejection/refresh invariant.
 
 ### Security
 

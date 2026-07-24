@@ -12,6 +12,11 @@ reviewable records:
 - `bundle.json`: the final hashes for the plan, state, event chain, task logs,
   quarantined partial outputs, and verified outputs.
 
+Before an approval-gated retry, `inspect` can also emit a deterministic resume
+view and SHA-256. A caller can pass that digest back to `resume`; if any bound
+evidence, relevant input, completed output, or partial output changed after
+review, the runner refuses the bound resume before its first transition.
+
 A manual point-in-time name check against PyPI, npm, crates.io, and GitHub found
 no exact match on 2026-07-24. That is not a trademark or permanent-availability
 conclusion; repeat the check immediately before publication. This repository
@@ -35,10 +40,14 @@ For declared files, v0.1:
 5. never creates a bundle for a failed run;
 6. quarantines an incomplete attempt's regular-file outputs before retry;
 7. verifies the completed prefix and retry budget before a resume transition;
-8. uses per-file same-directory atomic replacement for state and the
-   content-monotonic event chain; and
-9. re-hashes the complete declared evidence set and rejects unexpected run-root
-   entries during `verify`.
+8. emits a mutation-free resume decision that binds current evidence, relevant
+   inputs, completed outputs, and unverified output/quarantine observations;
+9. optionally requires that exact decision SHA-256 and checks it again
+   immediately before the first resume transition;
+10. uses per-file same-directory atomic replacement for state and the
+    content-monotonic event chain; and
+11. re-hashes the complete declared evidence set and rejects unexpected run-root
+    entries during `verify`.
 
 These guarantees apply only to declared files. BenchHandoff is not a sandbox,
 and its per-file atomic writes are not a cross-file transaction or a power-loss
@@ -80,7 +89,9 @@ New-Item -ItemType Directory -Path runs
 $env:PYTHONPATH = "src"
 python -m benchhandoff start demo-recovery\suite.toml --run-dir runs\recovery
 if ($LASTEXITCODE -ne 20) { throw "expected the synthetic first attempt to fail" }
-python -m benchhandoff resume runs\recovery
+$decision = python -m benchhandoff inspect runs\recovery | ConvertFrom-Json
+python -m benchhandoff resume runs\recovery `
+  --expected-decision-sha256 $decision.decision_sha256
 python -m benchhandoff verify runs\recovery
 ```
 
@@ -101,7 +112,12 @@ PYTHONPATH=src python -m benchhandoff start demo-recovery/suite.toml --run-dir r
 start_code=$?
 set -e
 test "$start_code" -eq 20
-PYTHONPATH=src python -m benchhandoff resume runs/recovery
+decision_sha="$(
+  PYTHONPATH=src python -m benchhandoff inspect runs/recovery |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["decision_sha256"])'
+)"
+PYTHONPATH=src python -m benchhandoff resume runs/recovery \
+  --expected-decision-sha256 "$decision_sha"
 PYTHONPATH=src python -m benchhandoff verify runs/recovery
 ```
 
@@ -155,6 +171,20 @@ directory, no bundle exists, and partial regular-file outputs remain unverified.
 5. appends a new attempt and re-runs the first incomplete task; and
 6. creates a bundle only after every task output is a verified regular file.
 
+For approval-gated recovery, run `inspect` first and pass its
+`decision_sha256` to `resume --expected-decision-sha256`. The decision is a
+read-only snapshot: it hashes the suite, run evidence, completed outputs,
+next-task inputs, current unverified outputs, and deterministic quarantine
+candidates. Bound resume recomputes it twice and exits `30` before the
+`run_resumed` transition if the digest is stale. `inspect` refuses an unstable
+pending event instead of reconciling it. Plain `resume` remains compatible and
+may reconcile the two modeled pending-event states.
+
+The decision is not stored, signed, or a lock. It narrows accidental
+review-to-execution drift for one trusted writer; it does not remove the final
+check-to-mutation race or defend against hostile concurrent mutation. See
+[LIMITATIONS.md](LIMITATIONS.md).
+
 Commands should be idempotent and avoid undeclared side effects. A task that
 completed externally but was not durably recorded is deliberately retried. A
 hard crash in a launch or atomic-write window can instead leave a permanent
@@ -203,7 +233,10 @@ asserted scenario executes 18 child processes for a naive full restart and 13
 for BenchHandoff resume, repeating five versus zero successful tasks, while
 ending at the same final output hash. These are deterministic child-work counts,
 not wall-clock, production, or third-party performance evidence. The focused
-one-task diagnostic remains at `benchmarks/synthetic/run_benchmark.py`.
+one-task diagnostic additionally changes a reviewed partial output, proves the
+stale decision is rejected without changing state, events, quarantine, output,
+or attempt count, then refreshes the decision and completes. It remains at
+`benchmarks/synthetic/run_benchmark.py`.
 
 ## Tests
 
