@@ -1,0 +1,8 @@
+version = 1
+name = "basic-sha256"
+
+[[task]]
+id = "hash-input"
+argv = ["python", "hash_copy.py", "input.txt", "output.json"]
+inputs = ["hash_copy.py", "input.txt"]
+outputs = ["output.json"]
