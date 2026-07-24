@@ -69,13 +69,14 @@ optional package build uses setuptools. Running from source needs no install.
 
 ## Validation status
 
-As of 2026-07-24, the local Windows/Python 3.12.10 suite ran 113 tests on
-implementation commit `df995d3a5cdfa3659271dd03ad01db2d4e6effc0`: 110 passed
+As of 2026-07-24, the local Windows/Python 3.12.10 suite ran 121 tests on
+implementation commit `69ddf7556e037eddb041c77188fcf0ea03871f30`: 118 passed
 and 3 symlink-creation tests were skipped because this Windows account lacks
 that privilege. There were no failures or errors. The checked-in CI matrix
 covers Ubuntu 24.04 and Windows Server 2025 with Python 3.11 through 3.14, but it
-is only a proposed test plan until an online run exists. No production,
-third-party, or external-adoption claim is made. See
+is only a proposed test plan until an online run exists. The canonical
+external-evidence validator also passed with all four public counts at zero. No
+production, third-party, or external-adoption claim is made. See
 [VALIDATION_20260724.md](VALIDATION_20260724.md).
 
 ## Five-minute quickstart
