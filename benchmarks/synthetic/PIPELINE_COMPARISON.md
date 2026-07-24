@@ -18,7 +18,7 @@ These numbers follow from the fixed scenario and are asserted by the benchmark
 and its unit test. They measure child-process work counts only. No wall-clock,
 throughput, hardware, production, or third-party benefit is claimed.
 
-Run:
+Run this lower-level diagnostic directly:
 
 ```powershell
 $env:PYTHONPATH = "src"
