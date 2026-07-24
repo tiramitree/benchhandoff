@@ -1,4 +1,4 @@
-"""Create one bounded, commit-bound synthetic reproduction package."""
+"""Create or verify one bounded, commit-bound synthetic reproduction package."""
 
 from __future__ import annotations
 
@@ -30,6 +30,108 @@ SUMMARY_FILE = "summary.json"
 MANIFEST_FILE = "SHA256SUMS.txt"
 COMPLETE_FILE = "PACKAGE_COMPLETE.json"
 _COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
+_MANIFEST_ROW_PATTERN = re.compile(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9._-]*)")
+_MANIFESTED_FILES = (FOCUSED_FILE, PIPELINE_FILE, SUMMARY_FILE)
+_REQUIRED_FILES = (*_MANIFESTED_FILES, MANIFEST_FILE)
+_PACKAGE_FILES = (*_REQUIRED_FILES, COMPLETE_FILE)
+_MAX_FILE_BYTES = {
+    FOCUSED_FILE: 1024 * 1024,
+    PIPELINE_FILE: 1024 * 1024,
+    SUMMARY_FILE: 1024 * 1024,
+    MANIFEST_FILE: 8 * 1024,
+    COMPLETE_FILE: 64 * 1024,
+}
+_VERIFIED_CLAIMS = {
+    "focused_fail_quarantine_resume_verify": True,
+    "pipeline_child_calls_naive_vs_resume": [18, 13],
+    "pipeline_duplicate_successes_naive_vs_resume": [5, 0],
+    "pipeline_final_output_identity_equal": True,
+}
+_PACKAGE_SCOPE = (
+    "synthetic commit-bound behavior; not elapsed-time, production, "
+    "security, third-party, or adoption evidence"
+)
+_SUMMARY_KEYS = {
+    "schema_version",
+    "kind",
+    "source_git_commit",
+    "source_git_clean",
+    "python_implementation",
+    "python_version",
+    "operating_system",
+    "records",
+    "verified_claims",
+    "scope",
+}
+_COMPLETION_KEYS = {
+    "schema_version",
+    "kind",
+    "manifest_file",
+    "manifest_sha256",
+    "manifest_size",
+    "required_files",
+}
+_PROVENANCE_KEYS = {
+    "generated_at_utc",
+    "operating_system",
+    "platform",
+    "platform_details",
+    "python_implementation",
+    "python_version",
+    "source_git_clean",
+    "source_git_commit",
+}
+_FOCUSED_KEYS = _PROVENANCE_KEYS | {
+    "schema_version",
+    "benchmark",
+    "attempts",
+    "first_elapsed_ms",
+    "first_exit_code",
+    "first_status",
+    "quarantined_outputs",
+    "recovery_success",
+    "resume_elapsed_ms",
+    "resume_status",
+    "verify_status",
+    "final_output",
+}
+_PIPELINE_KEYS = _PROVENANCE_KEYS | {
+    "schema_version",
+    "benchmark",
+    "task_count",
+    "first_failure_task",
+    "exact_expectations",
+    "naive_restart",
+    "ledger_resume",
+    "comparison",
+    "timing_claim",
+    "scope",
+}
+_NAIVE_KEYS = {
+    "strategy",
+    "subprocess_calls",
+    "successful_task_executions",
+    "duplicate_successful_executions",
+    "final_tasks_present",
+    "failure_codes",
+    "final_output",
+}
+_RESUMED_KEYS = {
+    "strategy",
+    "subprocess_calls",
+    "successful_task_executions",
+    "duplicate_successful_executions",
+    "final_tasks_completed",
+    "first_failure_code",
+    "quarantined_outputs",
+    "verify_status",
+    "final_output",
+}
+_COMPARISON_KEYS = {
+    "avoided_subprocess_calls",
+    "avoided_duplicate_successful_executions",
+}
+_FILE_IDENTITY_KEYS = {"sha256", "size"}
 _PIPELINE_ASSERTION_KEYS = {
     "naive_subprocess_calls",
     "ledger_subprocess_calls",
@@ -45,7 +147,7 @@ _PIPELINE_ASSERTION_KEYS = {
 
 
 class ReproductionPackageError(RuntimeError):
-    """A bounded failure while producing a reproduction package."""
+    """A bounded failure while producing or verifying a reproduction package."""
 
 
 @dataclass(frozen=True)
@@ -73,6 +175,38 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _reject_duplicate_json_pairs(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(_: str) -> object:
+    raise ValueError("non-finite JSON number")
+
+
+def _parse_json_object(name: str, value: bytes) -> dict[str, object]:
+    try:
+        decoded = value.decode("utf-8")
+        parsed = json.loads(
+            decoded,
+            object_pairs_hook=_reject_duplicate_json_pairs,
+            parse_constant=_reject_json_constant,
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        raise ReproductionPackageError(f"{name} is not strict UTF-8 JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ReproductionPackageError(f"{name} must contain one JSON object")
+    if value != _render_json(parsed):
+        raise ReproductionPackageError(f"{name} is not in canonical JSON form")
+    return parsed
+
+
 def _write_new(path: Path, value: bytes) -> None:
     with path.open("xb") as handle:
         handle.write(value)
@@ -94,6 +228,71 @@ def _is_link_or_reparse(path: Path) -> bool:
     attributes = getattr(metadata, "st_file_attributes", 0)
     reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
     return path.is_symlink() or bool(attributes & reparse_flag)
+
+
+def _regular_file_identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
+
+
+def _read_bounded_regular_file(path: Path, *, max_bytes: int) -> bytes:
+    try:
+        before = path.stat(follow_symlinks=False)
+        if _is_link_or_reparse(path) or not stat.S_ISREG(before.st_mode):
+            raise ReproductionPackageError(
+                f"{path.name} must be a regular non-linked file"
+            )
+        if before.st_size < 0 or before.st_size > max_bytes:
+            raise ReproductionPackageError(f"{path.name} exceeds its size limit")
+        with path.open("rb") as handle:
+            value = handle.read(max_bytes + 1)
+        after = path.stat(follow_symlinks=False)
+        linked_after = _is_link_or_reparse(path)
+    except ReproductionPackageError:
+        raise
+    except OSError as exc:
+        raise ReproductionPackageError(
+            f"{path.name} could not be read ({type(exc).__name__})"
+        ) from exc
+    if (
+        len(value) != before.st_size
+        or len(value) > max_bytes
+        or _regular_file_identity(before) != _regular_file_identity(after)
+        or linked_after
+        or not stat.S_ISREG(after.st_mode)
+    ):
+        raise ReproductionPackageError(f"{path.name} changed while being read")
+    return value
+
+
+def _verification_directory(package_directory: Path) -> Path:
+    try:
+        raw = package_directory.absolute()
+        resolved = raw.resolve(strict=True)
+        if (
+            _normalized_path(raw) != _normalized_path(resolved)
+            or _is_link_or_reparse(resolved)
+            or not resolved.is_dir()
+        ):
+            raise ReproductionPackageError(
+                "package directory must be a regular non-linked directory"
+            )
+        entries = list(resolved.iterdir())
+    except ReproductionPackageError:
+        raise
+    except OSError as exc:
+        raise ReproductionPackageError(
+            f"package directory is unavailable ({type(exc).__name__})"
+        ) from exc
+    if len(entries) != len(_PACKAGE_FILES) or {entry.name for entry in entries} != set(
+        _PACKAGE_FILES
+    ):
+        raise ReproductionPackageError("package topology is invalid")
+    return resolved
 
 
 def _output_target(output_directory: Path, repository_root: Path) -> _OutputTarget:
@@ -169,6 +368,32 @@ def _source_identity(repository_root: Path) -> tuple[str, dict[str, object]]:
     return commit, provenance
 
 
+def _validate_provenance(record: dict[str, object], benchmark: str) -> None:
+    for key in (
+        "generated_at_utc",
+        "operating_system",
+        "platform",
+        "platform_details",
+        "python_implementation",
+        "python_version",
+    ):
+        value = record.get(key)
+        if not isinstance(value, str) or not value or len(value) > 2048:
+            raise ReproductionPackageError(f"{benchmark} provenance is invalid")
+
+
+def _validate_file_identity(value: object, benchmark: str) -> None:
+    if (
+        not isinstance(value, dict)
+        or set(value) != _FILE_IDENTITY_KEYS
+        or not isinstance(value.get("sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", value["sha256"]) is None
+        or type(value.get("size")) is not int
+        or value["size"] < 0
+    ):
+        raise ReproductionPackageError(f"{benchmark} file identity is invalid")
+
+
 def _validate_record(
     record: dict[str, object],
     *,
@@ -183,11 +408,22 @@ def _validate_record(
         raise ReproductionPackageError(f"{benchmark} source is not clean")
     if record.get("source_git_commit") != source_commit:
         raise ReproductionPackageError(f"{benchmark} source commit drifted")
+    _validate_provenance(record, benchmark)
 
 
 def _validate_focused(record: dict[str, object], source_commit: str) -> None:
     benchmark = "synthetic-interruption-recovery"
     _validate_record(record, benchmark=benchmark, source_commit=source_commit)
+    if set(record) != _FOCUSED_KEYS:
+        raise ReproductionPackageError(f"{benchmark} field set is invalid")
+    _validate_file_identity(record.get("final_output"), benchmark)
+    if any(
+        not isinstance(record.get(key), (int, float))
+        or isinstance(record.get(key), bool)
+        or record[key] < 0
+        for key in ("first_elapsed_ms", "resume_elapsed_ms")
+    ):
+        raise ReproductionPackageError(f"{benchmark} elapsed value is invalid")
     expected = {
         "attempts": 2,
         "first_exit_code": 75,
@@ -197,13 +433,20 @@ def _validate_focused(record: dict[str, object], source_commit: str) -> None:
         "resume_status": "completed",
         "verify_status": "verified",
     }
-    if any(record.get(key) != value for key, value in expected.items()):
+    if (
+        any(record.get(key) != value for key, value in expected.items())
+        or type(record.get("attempts")) is not int
+        or type(record.get("first_exit_code")) is not int
+        or type(record.get("quarantined_outputs")) is not int
+    ):
         raise ReproductionPackageError(f"{benchmark} assertions failed")
 
 
 def _validate_pipeline(record: dict[str, object], source_commit: str) -> None:
     benchmark = "synthetic-12-task-restart-vs-resume"
     _validate_record(record, benchmark=benchmark, source_commit=source_commit)
+    if set(record) != _PIPELINE_KEYS:
+        raise ReproductionPackageError(f"{benchmark} field set is invalid")
     exact = record.get("exact_expectations")
     naive = record.get("naive_restart")
     resumed = record.get("ledger_resume")
@@ -213,10 +456,15 @@ def _validate_pipeline(record: dict[str, object], source_commit: str) -> None:
         or set(exact) != _PIPELINE_ASSERTION_KEYS
         or any(value is not True for value in exact.values())
         or not isinstance(naive, dict)
+        or set(naive) != _NAIVE_KEYS
         or not isinstance(resumed, dict)
+        or set(resumed) != _RESUMED_KEYS
         or not isinstance(comparison, dict)
+        or set(comparison) != _COMPARISON_KEYS
         or record.get("task_count") != 12
         or record.get("first_failure_task") != 6
+        or naive.get("strategy") != "naive-full-restart"
+        or resumed.get("strategy") != "benchhandoff-resume"
         or naive.get("subprocess_calls") != 18
         or naive.get("successful_task_executions") != 17
         or resumed.get("subprocess_calls") != 13
@@ -236,8 +484,154 @@ def _validate_pipeline(record: dict[str, object], source_commit: str) -> None:
         != "none; this benchmark reports deterministic work counts only"
         or record.get("scope")
         != "local synthetic behavior, not production or third-party evidence"
+        or any(
+            type(value) is not int
+            for value in (
+                record.get("task_count"),
+                record.get("first_failure_task"),
+                naive.get("subprocess_calls"),
+                naive.get("successful_task_executions"),
+                naive.get("duplicate_successful_executions"),
+                naive.get("final_tasks_present"),
+                resumed.get("subprocess_calls"),
+                resumed.get("successful_task_executions"),
+                resumed.get("duplicate_successful_executions"),
+                resumed.get("final_tasks_completed"),
+                resumed.get("first_failure_code"),
+                resumed.get("quarantined_outputs"),
+                comparison.get("avoided_subprocess_calls"),
+                comparison.get("avoided_duplicate_successful_executions"),
+            )
+        )
     ):
         raise ReproductionPackageError(f"{benchmark} assertions failed")
+    _validate_file_identity(naive.get("final_output"), benchmark)
+    _validate_file_identity(resumed.get("final_output"), benchmark)
+
+
+def _validate_manifest(
+    manifest_bytes: bytes,
+    file_bytes: dict[str, bytes],
+) -> None:
+    try:
+        manifest_text = manifest_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ReproductionPackageError("SHA256SUMS.txt is not UTF-8") from exc
+    if not manifest_text.endswith("\n") or "\r" in manifest_text:
+        raise ReproductionPackageError("SHA256SUMS.txt has invalid line endings")
+    rows = manifest_text[:-1].split("\n")
+    if len(rows) != len(_MANIFESTED_FILES):
+        raise ReproductionPackageError("SHA256SUMS.txt row count is invalid")
+    for row, expected_name in zip(rows, _MANIFESTED_FILES, strict=True):
+        match = _MANIFEST_ROW_PATTERN.fullmatch(row)
+        if match is None or match.group(2) != expected_name:
+            raise ReproductionPackageError("SHA256SUMS.txt row is invalid")
+        if match.group(1) != _sha256_bytes(file_bytes[expected_name]):
+            raise ReproductionPackageError(
+                f"SHA256SUMS.txt hash failed for {expected_name}"
+            )
+
+
+def verify_reproduction_package(
+    package_directory: Path | str,
+    *,
+    expected_commit: str | None = None,
+) -> dict[str, object]:
+    """Verify package topology, bounds, records, manifest, and source binding."""
+
+    if (
+        expected_commit is not None
+        and _COMMIT_PATTERN.fullmatch(expected_commit) is None
+    ):
+        raise ReproductionPackageError(
+            "expected commit must be 40 lowercase hexadecimal characters"
+        )
+    package = _verification_directory(Path(package_directory))
+    try:
+        package_identity = _directory_identity(package)
+    except OSError as exc:
+        raise ReproductionPackageError(
+            f"package directory identity is unavailable ({type(exc).__name__})"
+        ) from exc
+    file_bytes = {
+        name: _read_bounded_regular_file(
+            package / name,
+            max_bytes=_MAX_FILE_BYTES[name],
+        )
+        for name in _PACKAGE_FILES
+    }
+
+    completion = _parse_json_object(COMPLETE_FILE, file_bytes[COMPLETE_FILE])
+    if (
+        set(completion) != _COMPLETION_KEYS
+        or completion.get("schema_version") != SCHEMA_VERSION
+        or completion.get("kind")
+        != "benchhandoff-reproduction-package-completion"
+        or completion.get("manifest_file") != MANIFEST_FILE
+        or completion.get("manifest_sha256")
+        != _sha256_bytes(file_bytes[MANIFEST_FILE])
+        or completion.get("manifest_size") != len(file_bytes[MANIFEST_FILE])
+        or completion.get("required_files") != list(_REQUIRED_FILES)
+    ):
+        raise ReproductionPackageError("completion record is invalid")
+
+    _validate_manifest(file_bytes[MANIFEST_FILE], file_bytes)
+    focused = _parse_json_object(FOCUSED_FILE, file_bytes[FOCUSED_FILE])
+    pipeline = _parse_json_object(PIPELINE_FILE, file_bytes[PIPELINE_FILE])
+    summary = _parse_json_object(SUMMARY_FILE, file_bytes[SUMMARY_FILE])
+    source_commit = summary.get("source_git_commit")
+    if (
+        set(summary) != _SUMMARY_KEYS
+        or summary.get("schema_version") != SCHEMA_VERSION
+        or summary.get("kind") != "benchhandoff-synthetic-reproduction-package"
+        or not isinstance(source_commit, str)
+        or _COMMIT_PATTERN.fullmatch(source_commit) is None
+        or summary.get("source_git_clean") is not True
+        or any(
+            not isinstance(summary.get(field), str) or not summary.get(field)
+            for field in (
+                "python_implementation",
+                "python_version",
+                "operating_system",
+            )
+        )
+        or summary.get("verified_claims") != _VERIFIED_CLAIMS
+        or summary.get("scope") != _PACKAGE_SCOPE
+    ):
+        raise ReproductionPackageError("summary record is invalid")
+    if expected_commit is not None and source_commit != expected_commit:
+        raise ReproductionPackageError("package source commit does not match expected")
+
+    _validate_focused(focused, source_commit)
+    _validate_pipeline(pipeline, source_commit)
+    expected_records = [
+        {
+            "benchmark": focused["benchmark"],
+            "file": FOCUSED_FILE,
+            "sha256": _sha256_bytes(file_bytes[FOCUSED_FILE]),
+            "size": len(file_bytes[FOCUSED_FILE]),
+        },
+        {
+            "benchmark": pipeline["benchmark"],
+            "file": PIPELINE_FILE,
+            "sha256": _sha256_bytes(file_bytes[PIPELINE_FILE]),
+            "size": len(file_bytes[PIPELINE_FILE]),
+        },
+    ]
+    if summary.get("records") != expected_records:
+        raise ReproductionPackageError("summary record bindings are invalid")
+    revalidated_package = _verification_directory(Path(package_directory))
+    try:
+        if (
+            revalidated_package != package
+            or _directory_identity(revalidated_package) != package_identity
+        ):
+            raise ReproductionPackageError("package directory identity changed")
+    except OSError as exc:
+        raise ReproductionPackageError(
+            f"package directory revalidation failed ({type(exc).__name__})"
+        ) from exc
+    return summary
 
 
 def build_reproduction_package(
@@ -288,21 +682,13 @@ def build_reproduction_package(
         "python_version": source_provenance["python_version"],
         "operating_system": source_provenance["operating_system"],
         "records": records,
-        "verified_claims": {
-            "focused_fail_quarantine_resume_verify": True,
-            "pipeline_child_calls_naive_vs_resume": [18, 13],
-            "pipeline_duplicate_successes_naive_vs_resume": [5, 0],
-            "pipeline_final_output_identity_equal": True,
-        },
-        "scope": (
-            "synthetic commit-bound behavior; not elapsed-time, production, "
-            "security, third-party, or adoption evidence"
-        ),
+        "verified_claims": {**_VERIFIED_CLAIMS},
+        "scope": _PACKAGE_SCOPE,
     }
     raw_bytes[SUMMARY_FILE] = _render_json(summary)
     manifest_rows = [
         f"{_sha256_bytes(raw_bytes[name])}  {name}"
-        for name in (FOCUSED_FILE, PIPELINE_FILE, SUMMARY_FILE)
+        for name in _MANIFESTED_FILES
     ]
     manifest_bytes = ("\n".join(manifest_rows) + "\n").encode("utf-8")
     completion: dict[str, object] = {
@@ -322,10 +708,10 @@ def build_reproduction_package(
     try:
         _revalidate_output_parent(target)
         target.path.mkdir()
-        for name in (FOCUSED_FILE, PIPELINE_FILE, SUMMARY_FILE):
+        for name in _MANIFESTED_FILES:
             _write_new(target.path / name, raw_bytes[name])
         _write_new(target.path / MANIFEST_FILE, manifest_bytes)
-        for name in (FOCUSED_FILE, PIPELINE_FILE, SUMMARY_FILE):
+        for name in _MANIFESTED_FILES:
             expected = _sha256_bytes(raw_bytes[name])
             if _sha256_file(target.path / name) != expected:
                 raise ReproductionPackageError(
@@ -333,12 +719,7 @@ def build_reproduction_package(
                 )
         if _sha256_file(target.path / MANIFEST_FILE) != completion["manifest_sha256"]:
             raise ReproductionPackageError("post-write manifest verification failed")
-        expected_entries = {
-            FOCUSED_FILE,
-            PIPELINE_FILE,
-            SUMMARY_FILE,
-            MANIFEST_FILE,
-        }
+        expected_entries = set(_REQUIRED_FILES)
         if {entry.name for entry in target.path.iterdir()} != expected_entries:
             raise ReproductionPackageError("unexpected package entry appeared")
         _write_new(target.path / COMPLETE_FILE, _render_json(completion))
@@ -347,33 +728,48 @@ def build_reproduction_package(
             f"package write failed closed ({type(exc).__name__})"
         ) from exc
 
-    if {entry.name for entry in target.path.iterdir()} != {
-        FOCUSED_FILE,
-        PIPELINE_FILE,
-        SUMMARY_FILE,
-        MANIFEST_FILE,
-        COMPLETE_FILE,
-    }:
+    if {entry.name for entry in target.path.iterdir()} != set(_PACKAGE_FILES):
         raise ReproductionPackageError("final package topology is invalid")
     return summary
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Create one bounded BenchHandoff synthetic reproduction package."
+        description=(
+            "Create or verify one bounded BenchHandoff synthetic reproduction package."
+        )
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
         "--output-dir",
-        required=True,
         type=Path,
         help=(
             "new directory inside a new, empty, caller-private parent outside "
             "the source repository"
         ),
     )
+    mode.add_argument(
+        "--verify-dir",
+        type=Path,
+        help="existing complete reproduction package to verify without mutation",
+    )
+    parser.add_argument(
+        "--expected-commit",
+        help="optional full lowercase source commit required in verification mode",
+    )
     arguments = parser.parse_args(argv)
+    if arguments.output_dir is not None and arguments.expected_commit is not None:
+        parser.error("--expected-commit is only valid with --verify-dir")
     try:
-        summary = build_reproduction_package(arguments.output_dir)
+        if arguments.output_dir is not None:
+            summary = build_reproduction_package(arguments.output_dir)
+            status = "created"
+        else:
+            summary = verify_reproduction_package(
+                arguments.verify_dir,
+                expected_commit=arguments.expected_commit,
+            )
+            status = "verified"
     except ReproductionPackageError as exc:
         print(
             json.dumps(
@@ -391,16 +787,10 @@ def main(argv: list[str] | None = None) -> int:
     print(
         json.dumps(
             {
-                "status": "created",
+                "status": status,
                 "kind": summary["kind"],
                 "source_git_commit": summary["source_git_commit"],
-                "files": [
-                    FOCUSED_FILE,
-                    PIPELINE_FILE,
-                    SUMMARY_FILE,
-                    MANIFEST_FILE,
-                    COMPLETE_FILE,
-                ],
+                "files": list(_PACKAGE_FILES),
             },
             sort_keys=True,
             separators=(",", ":"),

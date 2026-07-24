@@ -36,21 +36,22 @@ Also run:
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
 python -m compileall -q src tests benchmarks examples
-evidence_root="$(mktemp -d)"
-PYTHONPATH=src python benchmarks/synthetic/run_pipeline_comparison.py \
-  --output "$evidence_root/pipeline-comparison.json"
-PYTHONPATH=src python benchmarks/synthetic/run_benchmark.py \
-  --output "$evidence_root/focused-recovery.json"
-(
-  cd "$evidence_root"
-  sha256sum pipeline-comparison.json focused-recovery.json > SHA256SUMS
-)
-python -c 'import json,pathlib,sys; r=pathlib.Path(sys.argv[1]); h=sys.argv[2]; d=[json.loads((r/n).read_text(encoding="utf-8")) for n in ("pipeline-comparison.json","focused-recovery.json")]; assert all(x["source_git_clean"] is True and x["source_git_commit"] == h for x in d)' "$evidence_root" "$(git rev-parse HEAD)"
+evidence_parent="$(mktemp -d)"
+evidence_root="$evidence_parent/package"
+expected_commit="$(git rev-parse HEAD)"
+PYTHONPATH=src python benchmarks/synthetic/reproduce.py \
+  --output-dir "$evidence_root"
+PYTHONPATH=src python benchmarks/synthetic/reproduce.py \
+  --verify-dir "$evidence_root" \
+  --expected-commit "$expected_commit"
 ```
 
-The temporary directory must be outside the checkout and start absent. Retain the raw JSON records and SHA-256
-manifest as build evidence. Describe these as synthetic child-work results, not
-wall-clock or production performance.
+The temporary parent must be outside the checkout and empty, and the package
+path must start absent. Retain the exact five-file verified package as build
+evidence. The verifier checks internal topology, bounds, hashes, records, and
+commit binding; it does not authenticate where a downloaded package came from.
+Describe these as synthetic child-work results, not wall-clock or production
+performance.
 
 ## 3. Build once
 

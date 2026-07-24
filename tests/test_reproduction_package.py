@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 import importlib.util
 import io
 import json
@@ -51,12 +51,15 @@ def _focused(commit: str) -> dict[str, object]:
         "schema_version": 1,
         "benchmark": "synthetic-interruption-recovery",
         "attempts": 2,
+        "first_elapsed_ms": 12.5,
         "first_exit_code": 75,
         "first_status": "failed",
         "quarantined_outputs": 1,
         "recovery_success": True,
+        "resume_elapsed_ms": 10.25,
         "resume_status": "completed",
         "verify_status": "verified",
+        "final_output": {"sha256": "e" * 64, "size": 113},
     }
 
 
@@ -81,6 +84,7 @@ def _pipeline(commit: str) -> dict[str, object]:
             "ledger_verified": True,
         },
         "naive_restart": {
+            "strategy": "naive-full-restart",
             "subprocess_calls": 18,
             "successful_task_executions": 17,
             "duplicate_successful_executions": 5,
@@ -89,6 +93,7 @@ def _pipeline(commit: str) -> dict[str, object]:
             "final_output": final,
         },
         "ledger_resume": {
+            "strategy": "benchhandoff-resume",
             "subprocess_calls": 13,
             "successful_task_executions": 12,
             "duplicate_successful_executions": 0,
@@ -113,6 +118,22 @@ def _paths(root: Path) -> tuple[Path, Path]:
     output_parent = root / "output-parent"
     output_parent.mkdir()
     return source, output_parent / "package"
+
+
+def _build_test_package(module: object, root: Path, commit: str) -> Path:
+    source, output = _paths(root)
+    with mock.patch.object(
+        module,
+        "benchmark_provenance",
+        return_value=_provenance(commit, clean=True),
+    ):
+        module.build_reproduction_package(
+            output,
+            repository_root=source,
+            focused_runner=lambda: _focused(commit),
+            pipeline_runner=lambda: _pipeline(commit),
+        )
+    return output
 
 
 class ReproductionPackageTests(unittest.TestCase):
@@ -169,6 +190,119 @@ class ReproductionPackageTests(unittest.TestCase):
                 completion["manifest_sha256"],
                 module._sha256_file(output / "SHA256SUMS.txt"),
             )
+
+    def test_verifies_exact_package_and_expected_commit(self) -> None:
+        module = _load_module()
+        commit = "1" * 40
+        with WorkspaceTemporaryDirectory(prefix="reproduction-verify-") as temporary:
+            output = _build_test_package(module, Path(temporary), commit)
+            summary = module.verify_reproduction_package(
+                output,
+                expected_commit=commit,
+            )
+        self.assertEqual(summary["source_git_commit"], commit)
+        self.assertEqual(
+            summary["verified_claims"]["pipeline_child_calls_naive_vs_resume"],
+            [18, 13],
+        )
+
+    def test_verifier_refuses_tampered_record(self) -> None:
+        module = _load_module()
+        with WorkspaceTemporaryDirectory(prefix="reproduction-tampered-") as temporary:
+            output = _build_test_package(module, Path(temporary), "2" * 40)
+            focused = output / "focused-recovery.json"
+            focused.write_bytes(focused.read_bytes() + b" ")
+            with self.assertRaisesRegex(
+                module.ReproductionPackageError,
+                "hash failed",
+            ):
+                module.verify_reproduction_package(output)
+
+    def test_verifier_refuses_invalid_completion_binding(self) -> None:
+        module = _load_module()
+        with WorkspaceTemporaryDirectory(prefix="reproduction-completion-") as temporary:
+            output = _build_test_package(module, Path(temporary), "3" * 40)
+            completion_path = output / "PACKAGE_COMPLETE.json"
+            completion = json.loads(completion_path.read_text(encoding="utf-8"))
+            completion["manifest_size"] += 1
+            completion_path.write_bytes(module._render_json(completion))
+            with self.assertRaisesRegex(
+                module.ReproductionPackageError,
+                "completion record is invalid",
+            ):
+                module.verify_reproduction_package(output)
+
+    def test_verifier_refuses_extra_package_entry(self) -> None:
+        module = _load_module()
+        with WorkspaceTemporaryDirectory(prefix="reproduction-extra-") as temporary:
+            output = _build_test_package(module, Path(temporary), "4" * 40)
+            (output / "unexpected.txt").write_text("x", encoding="utf-8")
+            with self.assertRaisesRegex(
+                module.ReproductionPackageError,
+                "topology is invalid",
+            ):
+                module.verify_reproduction_package(output)
+
+    def test_verifier_refuses_unexpected_commit(self) -> None:
+        module = _load_module()
+        with WorkspaceTemporaryDirectory(prefix="reproduction-commit-") as temporary:
+            output = _build_test_package(module, Path(temporary), "5" * 40)
+            with self.assertRaisesRegex(
+                module.ReproductionPackageError,
+                "does not match expected",
+            ):
+                module.verify_reproduction_package(
+                    output,
+                    expected_commit="6" * 40,
+                )
+
+    def test_verifier_refuses_linked_package_file(self) -> None:
+        module = _load_module()
+        with WorkspaceTemporaryDirectory(prefix="reproduction-link-") as temporary:
+            output = _build_test_package(module, Path(temporary), "7" * 40)
+            summary = output / "summary.json"
+            summary.unlink()
+            try:
+                summary.symlink_to("focused-recovery.json")
+            except OSError as exc:
+                self.skipTest(f"symlink creation unavailable: {type(exc).__name__}")
+            with self.assertRaisesRegex(
+                module.ReproductionPackageError,
+                "regular non-linked file",
+            ):
+                module.verify_reproduction_package(output)
+
+    def test_verifier_enforces_file_size_bound_before_parsing(self) -> None:
+        module = _load_module()
+        with WorkspaceTemporaryDirectory(prefix="reproduction-size-") as temporary:
+            output = _build_test_package(module, Path(temporary), "8" * 40)
+            focused = output / "focused-recovery.json"
+            focused.write_bytes(b"x" * (module._MAX_FILE_BYTES[focused.name] + 1))
+            with self.assertRaisesRegex(
+                module.ReproductionPackageError,
+                "exceeds its size limit",
+            ):
+                module.verify_reproduction_package(output)
+
+    def test_main_verifies_package_and_emits_bounded_json(self) -> None:
+        module = _load_module()
+        commit = "9" * 40
+        stdout = io.StringIO()
+        with WorkspaceTemporaryDirectory(prefix="reproduction-cli-") as temporary:
+            output = _build_test_package(module, Path(temporary), commit)
+            with redirect_stdout(stdout):
+                code = module.main(
+                    [
+                        "--verify-dir",
+                        str(output),
+                        "--expected-commit",
+                        commit,
+                    ]
+                )
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "verified")
+        self.assertEqual(payload["source_git_commit"], commit)
 
     def test_refuses_existing_output_before_running_benchmarks(self) -> None:
         module = _load_module()
@@ -239,6 +373,29 @@ class ReproductionPackageTests(unittest.TestCase):
                 )
             self.assertFalse(output.exists())
 
+    def test_unexpected_record_field_does_not_create_output(self) -> None:
+        module = _load_module()
+        commit = "0" * 40
+        invalid = _focused(commit)
+        invalid["unexpected_private_field"] = "must not enter a bounded package"
+        with WorkspaceTemporaryDirectory(prefix="reproduction-fields-") as temporary:
+            source, output = _paths(Path(temporary))
+            with mock.patch.object(
+                module,
+                "benchmark_provenance",
+                return_value=_provenance(commit, clean=True),
+            ):
+                with self.assertRaisesRegex(
+                    module.ReproductionPackageError,
+                    "field set is invalid",
+                ):
+                    module.build_reproduction_package(
+                        output,
+                        repository_root=source,
+                        focused_runner=lambda: invalid,
+                        pipeline_runner=lambda: _pipeline(commit),
+                    )
+            self.assertFalse(output.exists())
     def test_invariant_failure_does_not_create_output(self) -> None:
         module = _load_module()
         commit = "c" * 40

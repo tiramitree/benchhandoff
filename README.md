@@ -179,16 +179,23 @@ the single cross-platform entrypoint:
 $parent = New-Item -ItemType Directory -Path (
   Join-Path ([IO.Path]::GetTempPath()) ("benchhandoff-" + [guid]::NewGuid())
 )
+$package = Join-Path $parent.FullName "package"
+$expectedCommit = (git rev-parse HEAD).Trim()
 $env:PYTHONPATH = "src"
+python benchmarks\synthetic\reproduce.py --output-dir $package
+if ($LASTEXITCODE -ne 0) { throw "package generation failed" }
 python benchmarks\synthetic\reproduce.py `
-  --output-dir (Join-Path $parent.FullName "package")
+  --verify-dir $package `
+  --expected-commit $expectedCommit
 ```
 
 It produces two raw records, a bounded summary, `SHA256SUMS.txt`, and a final
 `PACKAGE_COMPLETE.json`; it refuses dirty source, an existing target, a
-nonempty or linked parent, and output inside the checkout. See
+nonempty or linked parent, and output inside the checkout. The same entrypoint
+then verifies the exact bounded topology, strict records, hashes, completion
+binding, invariants, and expected commit without mutating the package. See
 [docs/REPRODUCING.md](docs/REPRODUCING.md) for Linux syntax, package contents,
-and the independent-reproduction claim boundary.
+source-authentication limit, and the independent-reproduction claim boundary.
 
 The fixed pipeline has 12 sequential tasks; task 6 fails on its first call. The
 asserted scenario executes 18 child processes for a naive full restart and 13

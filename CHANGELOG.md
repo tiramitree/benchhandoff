@@ -28,6 +28,10 @@ and no external adoption is claimed.
   source, overwrite, linked or nonempty parents, and in-repository output, then
   writes two raw records, a bounded summary, a verified SHA-256 manifest, and a
   completion record.
+- A read-only mode on the same entrypoint that verifies exact topology and file
+  bounds, regular non-linked inputs, strict canonical JSON, all hash and record
+  bindings, deterministic benchmark invariants, and an optional expected
+  source commit.
 
 ### Security
 

@@ -31,6 +31,7 @@ body:
     attributes:
       label: Reproduction scope
       options:
+        - Complete verified synthetic reproduction package
         - Full source test suite
         - Synthetic pipeline comparison
         - Focused synthetic recovery benchmark
@@ -42,7 +43,7 @@ body:
     id: procedure
     attributes:
       label: Commands and procedure
-      description: Use relative placeholder paths and omit secrets.
+      description: Include the documented verify command and trusted expected commit when reporting a complete package; use relative placeholder paths and omit secrets.
     validations:
       required: true
   - type: textarea
@@ -56,7 +57,7 @@ body:
     id: hashes
     attributes:
       label: Evidence SHA-256 values
-      description: List hashes of bounded raw result files, not raw run directories.
+      description: List the complete bounded package manifest values, not raw run directories.
       render: text
     validations:
       required: false

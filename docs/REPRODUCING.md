@@ -48,8 +48,12 @@ On Linux:
 
 ```bash
 evidence_parent="$(mktemp -d)"
+expected_commit="$(git rev-parse HEAD)"
 PYTHONPATH=src python benchmarks/synthetic/reproduce.py \
   --output-dir "$evidence_parent/package"
+PYTHONPATH=src python benchmarks/synthetic/reproduce.py \
+  --verify-dir "$evidence_parent/package" \
+  --expected-commit "$expected_commit"
 ```
 
 On PowerShell:
@@ -58,9 +62,15 @@ On PowerShell:
 $evidenceParent = New-Item -ItemType Directory -Path (
   Join-Path ([IO.Path]::GetTempPath()) ("benchhandoff-" + [guid]::NewGuid())
 )
+$expectedCommit = (git rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw "unable to identify the source commit" }
+$evidencePackage = Join-Path $evidenceParent.FullName "package"
 $env:PYTHONPATH = "src"
+python benchmarks\synthetic\reproduce.py --output-dir $evidencePackage
+if ($LASTEXITCODE -ne 0) { throw "package generation failed" }
 python benchmarks\synthetic\reproduce.py `
-  --output-dir (Join-Path $evidenceParent.FullName "package")
+  --verify-dir $evidencePackage `
+  --expected-commit $expectedCommit
 ```
 
 The new package contains:
@@ -82,6 +92,15 @@ a directory without a valid completion record, exact file set, and verified
 manifest is incomplete and must not be cited or submitted. The script never
 writes evidence into the checkout, because doing so would make later provenance
 observe a dirty source tree.
+
+Verification is read-only. It requires the exact five-file topology, bounded
+regular non-linked files, canonical strict JSON, the completion-to-manifest
+binding, every manifest hash, both benchmark invariants, the summary bindings,
+and, when supplied, the expected full commit. Obtain that expected commit from
+a trusted checkout, release, or workflow URL; the package can bind a stated
+commit but cannot authenticate its own download source. A successful verifier
+run proves internal consistency with these synthetic assertions, not source
+trust, elapsed-time performance, production use, security, or outside adoption.
 
 The pipeline comparison is expected to assert 18 child calls for naive full
 restart versus 13 for BenchHandoff resume, with five versus zero repeated

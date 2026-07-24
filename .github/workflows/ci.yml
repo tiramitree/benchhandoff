@@ -64,7 +64,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Generate machine-readable benchmark records
+      - name: Generate and verify machine-readable benchmark records
         shell: bash
         env:
           PYTHONPATH: src
@@ -75,10 +75,9 @@ jobs:
           test ! -e "$evidence_parent"
           mkdir "$evidence_parent"
           python benchmarks/synthetic/reproduce.py --output-dir "$evidence_root"
-          python -c 'import json,pathlib,sys; d=json.loads((pathlib.Path(sys.argv[1])/"summary.json").read_text(encoding="utf-8")); assert d["source_git_clean"] is True and d["source_git_commit"] == sys.argv[2]' "$evidence_root" "$GITHUB_SHA"
-          (cd "$evidence_root" && sha256sum -c SHA256SUMS.txt)
-          test -s "$evidence_root/PACKAGE_COMPLETE.json"
-          python -c 'import hashlib,json,pathlib,sys; r=pathlib.Path(sys.argv[1]); c=json.loads((r/"PACKAGE_COMPLETE.json").read_text(encoding="utf-8")); m=(r/c["manifest_file"]).read_bytes(); assert hashlib.sha256(m).hexdigest() == c["manifest_sha256"]; assert c["required_files"] == ["focused-recovery.json","pipeline-comparison.json","summary.json","SHA256SUMS.txt"]; assert {p.name for p in r.iterdir()} == {*c["required_files"],"PACKAGE_COMPLETE.json"}' "$evidence_root"
+          python benchmarks/synthetic/reproduce.py \
+            --verify-dir "$evidence_root" \
+            --expected-commit "$GITHUB_SHA"
 
       - name: Upload benchmark records
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
