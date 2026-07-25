@@ -184,7 +184,7 @@ os._exit(0)
             self.assertTrue(lock.path.exists())
 
             lock.path.write_bytes(original)
-            lock.release()
+            lock.path.unlink()
             self.assertFalse(lock.path.exists())
 
 

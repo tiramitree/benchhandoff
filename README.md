@@ -203,25 +203,54 @@ candidates. Bound resume recomputes it twice and exits `30` before the
 pending event instead of reconciling it. Plain `resume` remains compatible and
 may reconcile the two modeled pending-event states.
 
-The decision is not stored, signed, or itself a lock. The mutation path now
-holds a sibling writer lock across both decision checks and every subsequent
-transition, quarantine move, child launch, and final verification. That closes
-the check-to-mutation race between cooperating local BenchHandoff writers. It
-does not prevent another program, privileged process, or hostile filesystem
-writer from changing bytes directly. See [LIMITATIONS.md](LIMITATIONS.md).
+The decision is not stored, signed, or itself a lock. The mutation path holds a
+sibling writer-lock record plus an automatically released operating-system
+guard across both decision checks and every subsequent transition, quarantine
+move, child launch, and final verification. Windows uses a named mutex scoped
+to the normalized run path; Linux uses an advisory `flock` on the lock file.
+That closes the check-to-mutation race between cooperating local BenchHandoff
+writers. It does not prevent another program, privileged process, or hostile
+filesystem writer from changing bytes directly. See
+[LIMITATIONS.md](LIMITATIONS.md).
 
-The lock record is named
+The canonical lock record is named
 `.<run-name>.benchhandoff-writer-lock.json` beside the run directory and records
 the owner PID, supported process-start token, normalized run path, and a random
-nonce. Clean exit removes only the exact bytes acquired by that writer. A hard
-process exit can leave the record behind; automatic `start` and `resume` then
-stop instead of guessing that ownership is stale.
+nonce. Clean exit removes only the exact file object and bytes acquired by that
+writer. A hard process exit releases the kernel guard but can leave the record;
+automatic `start` and `resume` still stop instead of guessing that ownership is
+stale.
+
+Orphan recovery is an explicit two-step control-plane action. First,
+`inspect-writer-lock` reads at most 4096 bytes, requires the exact canonical
+schema, samples owner liveness twice, and emits a decision SHA-256. It recommends
+recovery only when the recorded PID is definitely dead or a live PID has a
+stable different process-start token. Live, unknown, unstable, or
+identity-unverifiable owners are refused. Recovery has no age timeout.
+
+```powershell
+$lockDecision = python -m benchhandoff inspect-writer-lock runs\recovery |
+  ConvertFrom-Json
+if ($lockDecision.action -ne "recover-orphan") {
+  throw "writer lock is not proven orphaned: $($lockDecision.reason)"
+}
+python -m benchhandoff recover-writer-lock runs\recovery `
+  --expected-decision-sha256 $lockDecision.decision_sha256
+```
+
+`recover-writer-lock` reacquires the kernel guard, recomputes the exact decision,
+hard-links the original record to a SHA-named sibling tombstone, verifies that
+both names identify the same file object and bytes, then removes only the source
+name. It does not resume the run; inspect and resume separately afterward. A
+crash after tombstone creation but before source unlink is safely resumable.
+Malformed locks, unexpected hard links, foreign tombstones, stale decisions,
+and ambiguous ownership remain blocked for manual evidence review.
 
 Commands should be idempotent and avoid undeclared side effects. A task that
 completed externally but was not durably recorded is deliberately retried. A
-hard crash in a launch or atomic-write window can instead leave a permanent
-fail-closed guard that requires manual evidence review or abandonment; v0.1
-does not guess that retry is safe.
+hard crash in a child-launch or atomic-write window can still leave a
+fail-closed run-evidence state that requires manual review or abandonment; lock
+recovery does not claim that retrying the task itself is safe.
 
 ## Exit codes
 

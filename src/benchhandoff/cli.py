@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from benchhandoff import __version__
 from benchhandoff.engine import inspect_resume, resume_run, start_run, verify_run
 from benchhandoff.errors import BenchHandoffError
+from benchhandoff.writer_lock import inspect_writer_lock, recover_writer_lock
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -45,6 +46,23 @@ def _parser() -> argparse.ArgumentParser:
     )
     inspect.add_argument("run_dir", help="existing run evidence directory")
 
+    inspect_lock = subcommands.add_parser(
+        "inspect-writer-lock",
+        help="emit a mutation-free writer-lock recovery decision",
+    )
+    inspect_lock.add_argument("run_dir", help="run directory named by the writer lock")
+
+    recover_lock = subcommands.add_parser(
+        "recover-writer-lock",
+        help="archive one inspected orphan writer lock without resuming the run",
+    )
+    recover_lock.add_argument("run_dir", help="run directory named by the writer lock")
+    recover_lock.add_argument(
+        "--expected-decision-sha256",
+        required=True,
+        help="recover only if the current writer-lock decision has this SHA-256",
+    )
+
     verify = subcommands.add_parser("verify", help="verify a completed bundle")
     verify.add_argument("run_dir", help="completed run evidence directory")
     return parser
@@ -75,6 +93,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0 if result.status == "completed" else 20
         if arguments.command == "inspect":
             _emit(inspect_resume(arguments.run_dir))
+            return 0
+        if arguments.command == "inspect-writer-lock":
+            _emit(inspect_writer_lock(arguments.run_dir))
+            return 0
+        if arguments.command == "recover-writer-lock":
+            _emit(
+                recover_writer_lock(
+                    arguments.run_dir,
+                    expected_decision_sha256=arguments.expected_decision_sha256,
+                )
+            )
             return 0
         verification = verify_run(arguments.run_dir)
         _emit(verification)

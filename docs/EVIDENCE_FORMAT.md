@@ -76,6 +76,30 @@ byte-identity approval token, not a secret, signature, trusted timestamp,
 authorization service, or concurrency lock. Absolute run and suite paths in the
 object may be identifying and should not be published without review.
 
+## Writer-lock recovery decision and tombstone
+
+`inspect-writer-lock` emits a canonical
+`benchhandoff-writer-lock-recovery-decision` object without writing a file. It
+contains the normalized run and lock paths, exact lock identity and parsed
+record, a stable owner observation, action and reason, and deterministic
+SHA-named tombstone path. `decision_sha256` hashes the same object with that
+field omitted.
+
+The lock reader is independently bounded to 4096 bytes and requires the exact
+schema and canonical bytes. A recovery action is emitted only for a definitely
+dead owner or a stable live PID whose process-start token differs from the
+record. The digest is a local content binding, not a secret, signature, lease,
+trusted time, or proof that resuming the run is safe.
+
+`recover-writer-lock --expected-decision-sha256` recomputes the decision under
+the platform kernel guard. It preserves the original canonical lock bytes as a
+hard-linked sibling named from the lock SHA-256, verifies file-object identity,
+content identity, and exact link count, then removes only the active source
+name. Its emitted `benchhandoff-writer-lock-recovery` result records the
+decision and tombstone identities. The result is CLI output, not a run record.
+The tombstone itself remains the original lock record and is not included in
+`bundle.json`.
+
 ## `bundle.json`
 
 The one-time bundle contains:

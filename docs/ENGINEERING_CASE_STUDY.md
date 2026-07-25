@@ -104,7 +104,7 @@ Maintainer-generated records are also not independent reproduction or adoption.
 The exact commit, environment, assertions, record hashes, and claim boundary
 live in each reproduction package rather than in this narrative alone.
 
-## Four choices that deliberately fail closed
+## Five choices that deliberately fail closed
 
 ### 1. An unresolved launch guard blocks automatic recovery
 
@@ -146,12 +146,33 @@ partial output changes, the digest changes and bound resume stops before the
 
 This closes a practical stale-approval gap. The digest is unsigned and
 optional, so it must not be described as cryptographic authorization. A
-separate `O_EXCL` sibling writer lock now spans both digest checks and the
-complete mutation path. The deterministic contention benchmark holds that lock
-in a second process, observes one rejected resume with zero run-evidence file
-changes and no added attempt, then releases it and completes attempt 2. The
-lock coordinates cooperating local entrypoints only; it is not hostile-writer,
-remote-lease, network-filesystem, or distributed-scheduler protection.
+separate `O_EXCL` sibling writer lock and automatically released kernel guard
+span both digest checks and the complete mutation path. The deterministic
+contention benchmark holds them in a second process, observes one rejected
+resume with zero run-evidence file changes and no added attempt, then releases
+them and completes attempt 2. The lock coordinates cooperating local
+entrypoints only; it is not hostile-writer, remote-lease, network-filesystem,
+or distributed-scheduler protection.
+
+### 5. An orphan lock is recovered only through a bound preservation step
+
+A hard runner exit releases the Windows named mutex or Linux `flock`, but the
+canonical sibling record remains and still blocks mutation. BenchHandoff does
+not infer orphanhood from age. `inspect-writer-lock` samples liveness and
+process-start identity twice; it refuses live, unknown, changing, and
+identity-unverifiable owners.
+
+When the owner is definitely dead or the PID was stably reused, the inspection
+digest binds the exact record and proposed tombstone. Bound recovery reacquires
+the kernel guard, repeats the decision, hard-links the original bytes to a
+SHA-named tombstone, verifies file-object identity and link count, and then
+removes only the source name. Recovery and run resume remain separate actions.
+The partial state with both hard-link names is itself resumable after a second
+recovery-process crash.
+
+This narrows a real unattended-agent operations gap without claiming that the
+orphaned task is safe to retry. A malformed record, foreign tombstone,
+unexpected link, or ambiguous owner still stops for manual evidence review.
 
 ## A feature that was not shipped
 
@@ -175,6 +196,7 @@ not ready merely because its happy path works.
 | Fixed failure-to-resume behavior | `examples/recovery_pipeline/`, `tests/test_recovery_example.py` | Real model or simulator integration |
 | Stale reviewed-decision refusal without mutation | `tests/test_resume_decision.py`, focused reproduction-package JSON | Signature security, locking, or hostile concurrency |
 | Cooperative local writer contention | `src/benchhandoff/writer_lock.py`, `tests/test_writer_lock.py`, `benchmarks/synthetic/run_writer_contention.py` | Remote lease, fencing, network-filesystem proof, hostile-writer protection, or production reliability |
+| Evidence-bound orphan-lock recovery | `src/benchhandoff/writer_lock.py`, `tests/test_writer_lock_recovery.py`, `tests/test_writer_lock_recovery_boundaries.py` | Safe child retry, distributed recovery, hostile-writer protection, or production reliability |
 | 18→13 and 5→0 counts | Reproduction-package JSON plus `SHA256SUMS.txt` | Wall-clock speedup or external use |
 | Record semantics | `docs/EVIDENCE_FORMAT.md`, `docs/ARCHITECTURE.md` | Signed provenance or trusted time |
 | Known failure and threat boundaries | `LIMITATIONS.md` | Security certification |

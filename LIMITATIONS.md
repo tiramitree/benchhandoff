@@ -77,17 +77,36 @@ in scope.
   `start` and `resume` separately hold a cooperative local writer lock across
   their complete mutation path, so two BenchHandoff processes cannot both
   cross the check-to-mutation window for one run.
-- The sibling writer lock uses local filesystem `O_EXCL` creation. It is not a
-  remote lease, does not expire, and has no heartbeat, fencing token,
-  network-filesystem proof, distributed storage, remote worker, scheduler, or
-  multi-host clock model.
-- A normal return or handled failure removes only the exact lock bytes acquired
-  by that process. A hard process exit can leave an orphan lock. Future
-  mutation remains blocked until a human establishes that no writer is active
-  and handles the exact sibling file; v0.1 does not auto-break it.
-- The lock coordinates cooperating BenchHandoff entrypoints. It is not a
+- The sibling writer-lock record uses local filesystem `O_EXCL` creation.
+  Windows mutation/recovery also holds a named mutex keyed by the normalized
+  run path; Linux holds advisory `flock` on the lock file. These kernel guards
+  are released automatically when a process exits. They are not remote leases,
+  heartbeats, fencing tokens, network-filesystem proof, distributed storage,
+  remote workers, scheduler locks, or a multi-host clock model.
+- A normal return or handled failure removes only the exact lock file object
+  and bytes acquired by that process. A hard exit can leave the canonical
+  record after the kernel guard is released. Automatic `start` and `resume`
+  remain blocked until a separate recovery command succeeds.
+- `inspect-writer-lock` is read-only and recommends recovery only for a
+  definitely dead owner or a stable live PID whose process-start token differs
+  from the recorded token. Unknown liveness, a missing token for a live PID,
+  changing observations, malformed/noncanonical/oversized records, and
+  unexpected hard links fail closed. Wall-clock age is never evidence of
+  orphanhood.
+- `recover-writer-lock` requires the exact current decision SHA-256, reacquires
+  the local kernel guard, preserves the original record as a hard-linked
+  SHA-named tombstone, and unlinks only the source name. The tombstone remains
+  outside the run bundle and can expose the absolute run path and owner PID.
+  The command does not prove that retrying a child is safe and does not resume
+  the run.
+- A crash after tombstone creation but before source unlink is resumable when
+  both names still identify the exact same file object. A crash after source
+  unlink may complete recovery without returning CLI output. Malformed lock
+  creation, hostile concurrent mutation, unsupported hard-link semantics, or
+  ambiguous ownership still require manual review or abandonment.
+- The lock coordinates cooperating local BenchHandoff entrypoints. It is not a
   defense against a privileged or hostile process that edits or removes the
-  lock or run evidence directly.
+  lock, tombstone, or run evidence directly.
 
 ## Evidence and reproducibility
 

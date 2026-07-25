@@ -70,21 +70,39 @@ stable Windows or Linux process-start token is captured, state is updated with
 the PID/token and the guard is disarmed. An unresolved guard is intentionally
 not auto-recovered because the runner cannot prove whether the child ran.
 
-## Cooperative writer serialization
+## Cooperative writer serialization and orphan recovery
 
 Before either public mutation entrypoint loads or creates run evidence, it
 creates `.<run-name>.benchhandoff-writer-lock.json` beside the run directory
 with `O_EXCL`. The canonical record binds the normalized run path, owner PID,
-available process-start token, and a random nonce. The writer retains the lock
-through all state transitions, child execution, bundle construction, and final
-verification, then re-hashes the exact record before unlinking it.
+available process-start token, and a random nonce. The writer also holds one
+automatically released kernel guard for the complete mutation: a normalized-
+path named mutex on Windows or advisory `flock` on the record on Linux. It then
+rechecks the exact file object and bytes before unlinking the record.
 
-A second local BenchHandoff writer therefore stops before its load/check/mutate
-sequence. A hard exit can leave the sibling record, which intentionally blocks
-automatic mutation rather than being timed out or broken. This is a
-cooperative local lock, not an expiring lease, fencing protocol,
-network-filesystem guarantee, distributed coordinator, or hostile-writer
-boundary. Read-only `inspect` and `verify` do not claim it.
+A second cooperating writer therefore stops before its load/check/mutate
+sequence. A hard exit releases the kernel guard but can leave the canonical
+record, so `start` and `resume` remain blocked. No wall-clock timeout breaks
+that record.
+
+`inspect-writer-lock` provides a separate mutation-free decision. It requires a
+bounded canonical record and two stable owner observations. Only a definitely
+dead PID or a stable live PID with a different process-start token yields
+`recover-orphan`; live, unknown, changing, or identity-unverifiable ownership
+yields `refuse`. Its `decision_sha256` binds the complete record, observation,
+normalized run path, and deterministic tombstone path.
+
+`recover-writer-lock` must receive that exact digest. Under a newly acquired
+kernel guard it rereads the record and owner, creates or resumes one hard-link
+tombstone named from the record SHA-256, proves source and tombstone are the
+same file object with the same bytes, and unlinks only the source name. It
+never resumes the run. A partial source-plus-tombstone state is resumable; a
+foreign tombstone or unexpected extra hard link is refused.
+
+This is cooperative local serialization and evidence-preserving recovery, not
+an expiring lease, fencing protocol, signature, network-filesystem guarantee,
+distributed coordinator, or hostile-writer boundary. Read-only run `inspect`
+and `verify` do not acquire the writer guard.
 
 ## Review-to-execution binding
 
