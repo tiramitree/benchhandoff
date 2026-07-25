@@ -26,7 +26,9 @@ record remains fail-closed until an explicit evidence-bound recovery succeeds.
 A manual point-in-time name check against PyPI, npm, crates.io, and GitHub found
 no exact match on 2026-07-24. That is not a trademark or permanent-availability
 conclusion; repeat the check immediately before publication. This repository
-has not been published and no external adoption is claimed.
+has not been published and no external adoption is claimed. No open-source
+license has been selected; [LICENSING_STATUS.md](LICENSING_STATUS.md) is the
+authoritative boundary until the owner explicitly chooses one.
 
 BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
 scheduler, sandbox, cryptographic attestation service, or guarantee of full
@@ -129,6 +131,22 @@ It remains local synthetic Windows control-plane evidence, not Linux or public
 CI validation, a licensed release, safe-child-retry proof, production
 reliability, independent reproduction, distributed coordination, hostile-
 writer protection, third-party review, or external adoption.
+
+At clean source `6d2f5ec...`, two isolated CPython 3.12.10 clones then tested
+the owner-allowed Apache-2.0 and MIT transitions without changing this
+repository's pending state. Each final state completed the 157-test suite with
+154 passes, the same 3 Windows symlink-permission skips, and no failures or
+errors. Both sdist/wheel pairs passed strict Twine checks and PEP 639 metadata
+inspection; both installed wheels completed CLI help and the deliberate
+failure -> resume -> verify path. Cross-variant archive inspection found only
+the expected license, license-metadata, and derived RECORD/PKG-INFO content
+differences. All 6,810 temporary files and 74,432,653 bytes were deleted after
+hashing. The three-file diagnostic record is under
+`benchmarks/results/windows_py312_dual_license_release_preflight_commit_6d2f5ec_20260725/`.
+This is not an owner license choice, license grant, publication, public CI,
+Linux result, PyPI result, independent reproduction, production evidence, or
+external adoption. The final owner-selected commit must repeat the release
+gates.
 
 ## Five-minute quickstart
 
@@ -362,6 +380,7 @@ writer protection, distributed coordination, or external adoption.
 
 ```powershell
 $env:PYTHONPATH = "src"
+python tools\verify_license_state.py
 python tools\verify_external_evidence.py
 python -m unittest discover -s tests -v
 ```
