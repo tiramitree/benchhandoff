@@ -1,6 +1,6 @@
 # Contributing
 
-BenchHandoff is a pre-release alpha distributed under
+BenchHandoff is an early alpha distributed under
 [Apache License 2.0](LICENSE). Contributions must have clear provenance and be
 distributable under the repository license; opening a change does not imply
 that it will be accepted.

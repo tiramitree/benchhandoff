@@ -108,6 +108,15 @@ then passed the complete matrix and evidence job, but the package job exposed a
 materializing each listing before matching it. These are maintainer-operated
 CI results, not independent reproduction, production reliability, or adoption.
 
+## GitHub release
+
+[v0.1.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.1.0) is an
+early GitHub-only release under Apache-2.0. Its release assets are the exact
+wheel and sdist built and smoke-tested by the release commit's public CI, plus
+`SHA256SUMS` and the verified synthetic evidence records. No TestPyPI or PyPI
+package has been published. The GitHub release does not create a supported
+production line or external-adoption evidence.
+
 On 2026-07-25, the local Windows preflight exercised CPython 3.11.15, 3.12.13,
 3.13.14, and 3.14.6. Each runtime completed the 122-test suite with 119 passes
 and the same 3 symlink-creation permission skips, with no failures or errors.

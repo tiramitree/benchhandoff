@@ -1,7 +1,8 @@
 # Support
 
-BenchHandoff has no versioned package release, support SLA, guaranteed response
-time, compatibility promise, or production-support commitment.
+BenchHandoff has one GitHub-only early release and no package-registry release,
+support SLA, guaranteed response time, compatibility promise, or
+production-support commitment.
 
 Use the repository's structured issue forms for reproducible bugs, independent
 reproduction reports, and proposed external-use or review evidence. Use the

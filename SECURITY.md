@@ -1,6 +1,6 @@
 # Security Policy
 
-BenchHandoff is a pre-release alpha, not a sandbox or security boundary. Child
+BenchHandoff is an early alpha, not a sandbox or security boundary. Child
 commands inherit the caller's permissions and environment. Review
 [LIMITATIONS.md](LIMITATIONS.md) before running untrusted or sensitive work.
 
@@ -10,10 +10,10 @@ distributed fencing, or a remote lease.
 
 ## Supported versions
 
-There is no public supported release yet and no security-support or
-response-time commitment. After publication, this section must name the exact
-supported release line; do not infer support from the repository default
-branch.
+Version 0.1.0 is an early GitHub release, not a supported production line.
+Security reports may identify either `v0.1.0` or an exact `main` commit. There
+is no response-time, remediation-time, compatibility, or maintenance
+commitment.
 
 ## Reporting a vulnerability
 

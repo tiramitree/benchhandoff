@@ -1,14 +1,13 @@
 # Release Process
 
-This is a manual, fail-closed checklist for a future BenchHandoff release. It is
-not evidence that a release has occurred, and it does not authorize publication.
-CI may build downloadable diagnostic artifacts, but no package-registry
-publishing workflow is enabled.
+This is a manual, fail-closed checklist for BenchHandoff releases. CI builds
+downloadable artifacts, but no package-registry publishing workflow is
+enabled.
 
-The source repository is public under Apache-2.0. Public CI run
-`pre-rewrite-run-retired` is the first complete green source, evidence, build, and
-exact-wheel smoke run. There is still no Git tag, GitHub Release, TestPyPI or
-PyPI publication, supported release line, or external-adoption claim.
+Version `v0.1.0` is a GitHub-only early release under Apache-2.0. Its tag,
+GitHub Release, and attached assets bind to one exact public-CI-tested commit.
+There is no TestPyPI or PyPI publication, supported production line, or
+external-adoption claim.
 
 ## 1. Resolve release blockers
 
@@ -125,7 +124,29 @@ not let `PYTHONPATH` point at the source checkout.
 Record the wheel SHA, commands, exit codes, and environment. A successful
 source-tree test is not a substitute for this installed-wheel test.
 
-## 5. TestPyPI gate
+## 5. GitHub Release gate
+
+For a GitHub-only release:
+
+1. require one complete green public CI run on the exact candidate commit;
+2. download the distribution and evidence artifacts from that run;
+3. compare the downloaded files to the workflow's recorded SHA-256 values;
+4. create the final tag on the exact candidate commit;
+5. create the GitHub Release for that tag;
+6. attach the same wheel, sdist, `SHA256SUMS`, and five verified synthetic
+   evidence files; and
+7. download every release asset again and verify exact names, sizes, hashes,
+   metadata, and the installed-wheel smoke path.
+
+State all observed skips and limitations. Do not rebuild release assets after
+CI. If any release download differs, publish no replacement bytes under the
+same version.
+
+## 6. Optional package-registry gate
+
+Package-registry publication is a separate action and is not implied by a
+GitHub Release. It requires explicit owner authorization. Before any PyPI
+upload, use TestPyPI:
 
 Upload the exact candidate files to TestPyPI, then download that version into a
 new directory. Compare each downloaded artifact's SHA-256 to `dist/SHA256SUMS`.
@@ -135,20 +156,9 @@ installed-wheel smoke test.
 Stop if the name/version is unavailable, any hash differs, metadata is wrong,
 installation resolves unexpected content, or the smoke test fails. Do not
 change and reuse the same version; repair the source, increment the candidate
-version as appropriate, rebuild, and restart the checklist.
-
-## 6. Public release
-
-After all gates pass:
-
-1. create the final tag on the exact tested commit;
-2. upload the same source archive and wheel bytes to PyPI;
-3. verify the PyPI downloads against the recorded SHA-256 values;
-4. create the GitHub Release for the same tag;
-5. attach the same artifacts, `SHA256SUMS`, bounded benchmark records, and
-   release notes; and
-6. link the completed public CI runs and state all observed skips and
-   limitations.
+version as appropriate, rebuild, and restart the checklist. Only after that
+gate may the same bytes be uploaded to PyPI and downloaded again for hash and
+installed-wheel verification.
 
 Do not describe TestPyPI installation, repository views, downloads, issues, or
 self-authored examples as external adoption. Publication does not change the
@@ -169,5 +179,5 @@ silently replace them.
 - For a security issue: follow `SECURITY.md`, avoid public exploit details, and
   document the supported-version decision after human review.
 
-The owner must make any irreversible publication, license, yanking, or public
+The owner must make any new package-registry, yanking, license, or public
 security-disclosure decision.

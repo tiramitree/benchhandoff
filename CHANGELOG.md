@@ -1,12 +1,9 @@
 # Changelog
 
-All notable changes intended for a future public release will be documented in
-this file.
+All notable versioned changes are documented in this file. A GitHub Release is
+not a PyPI publication, supported-production claim, or external-adoption event.
 
-No versioned package release has been published. An entry under `Unreleased`
-is not a release, and no external adoption is claimed.
-
-## Unreleased
+## 0.1.0 - 2026-07-26
 
 ### Added
 
@@ -62,13 +59,14 @@ is not a release, and no external adoption is claimed.
 - Rejection of unsupported path forms, links, non-regular declared files, and
   ambiguous child-process state.
 
-### Pending before any release
+### Not included in this GitHub-only release
 
-- Exact-artifact build, TestPyPI verification, and release review described in
-  `docs/RELEASING.md`.
+- TestPyPI or PyPI publication. A future package-registry release requires its
+  own explicit authorization and the registry gates in `docs/RELEASING.md`.
 - A bounded, cross-platform, reparse-safe diagnostic export design; an initial
   local implementation was withheld after independent review found unresolved
   Windows path-race and resource-budget risks.
 
-No versioned release entry should be added until the exact public artifacts and
-tag exist.
+The GitHub Release attaches the exact CI-built wheel and sdist, their
+`SHA256SUMS`, and the verified synthetic evidence records. It does not change
+the zero external-evidence baseline.
