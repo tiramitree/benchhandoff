@@ -1,10 +1,9 @@
 # Contributing
 
-BenchHandoff is currently an unpublished local alpha. No open-source license has
-been selected, so this document describes the intended review process but does
-not grant permission to copy, redistribute, or publish the project. Do not merge
-or accept outside contributions until the owner has explicitly selected a
-license and the repository metadata has been updated.
+BenchHandoff is a pre-release alpha distributed under
+[Apache License 2.0](LICENSE). Contributions must have clear provenance and be
+distributable under the repository license; opening a change does not imply
+that it will be accepted.
 
 ## Before opening a change
 
@@ -29,6 +28,7 @@ dependencies. From the repository root:
 
 ```powershell
 $env:PYTHONPATH = "src"
+python tools\verify_license_state.py --require-final
 python tools\verify_external_evidence.py
 python -m unittest discover -s tests -v
 python -m compileall -q src tests tools benchmarks examples
@@ -37,6 +37,7 @@ python -m compileall -q src tests tools benchmarks examples
 On a POSIX shell:
 
 ```bash
+python tools/verify_license_state.py --require-final
 python tools/verify_external_evidence.py
 PYTHONPATH=src python -m unittest discover -s tests -v
 python -m compileall -q src tests tools benchmarks examples

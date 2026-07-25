@@ -25,10 +25,10 @@ record remains fail-closed until an explicit evidence-bound recovery succeeds.
 
 A manual point-in-time name check against PyPI, npm, crates.io, and GitHub found
 no exact match on 2026-07-24. That is not a trademark or permanent-availability
-conclusion; repeat the check immediately before publication. This repository
-has not been published and no external adoption is claimed. No open-source
-license has been selected; [LICENSING_STATUS.md](LICENSING_STATUS.md) is the
-authoritative boundary until the owner explicitly chooses one.
+conclusion; repeat the check immediately before a package-registry release.
+BenchHandoff is licensed under
+[Apache License 2.0](LICENSE). Repository publication, CI, downloads, stars,
+forks, and maintainer-authored examples are not external-adoption evidence.
 
 BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
 scheduler, sandbox, cryptographic attestation service, or guarantee of full
@@ -380,7 +380,7 @@ writer protection, distributed coordination, or external adoption.
 
 ```powershell
 $env:PYTHONPATH = "src"
-python tools\verify_license_state.py
+python tools\verify_license_state.py --require-final
 python tools\verify_external_evidence.py
 python -m unittest discover -s tests -v
 ```
@@ -416,5 +416,6 @@ review, deduplication, retraction, and validator boundary.
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Support](SUPPORT.md)
+- [Apache-2.0 license](LICENSE)
 - [Release process](docs/RELEASING.md)
 - [Changelog](CHANGELOG.md)

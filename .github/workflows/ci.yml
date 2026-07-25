@@ -43,8 +43,8 @@ jobs:
       - name: Compile source and validation assets
         run: python -m compileall -q src tests tools benchmarks examples
 
-      - name: Verify pending or final license state
-        run: python tools/verify_license_state.py
+      - name: Enforce the final license state
+        run: python tools/verify_license_state.py --require-final
 
       - name: Verify external-evidence ledger
         run: python tools/verify_external_evidence.py

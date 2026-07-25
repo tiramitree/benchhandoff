@@ -2,7 +2,8 @@
 
 This is a manual, fail-closed checklist for a future BenchHandoff release. It is
 not evidence that a release has occurred, and it does not authorize publication.
-There is no publishing workflow to enable at this stage.
+CI may build downloadable diagnostic artifacts, but no package-registry
+publishing workflow is enabled.
 
 ## 1. Resolve release blockers
 

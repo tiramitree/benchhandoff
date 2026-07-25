@@ -3,8 +3,8 @@
 All notable changes intended for a future public release will be documented in
 this file.
 
-The project is not yet published. An entry under `Unreleased` is not a release,
-and no external adoption is claimed.
+No versioned package release has been published. An entry under `Unreleased`
+is not a release, and no external adoption is claimed.
 
 ## Unreleased
 
@@ -12,6 +12,8 @@ and no external adoption is claimed.
 
 - Local CLI commands for starting, resuming, and verifying a flat sequential
   suite.
+- Apache License 2.0, bound to the canonical SPDX license-list-data text and
+  matching PEP 639 package metadata.
 - Fail-closed process, path, retry, quarantine, and evidence checks.
 - Versioned plan, state, event-chain, and final-bundle records.
 - Synthetic recovery benchmarks with raw result records and explicit claim
@@ -61,8 +63,6 @@ and no external adoption is claimed.
 
 ### Pending before any release
 
-- Explicit owner selection of an open-source license and matching package
-  metadata.
 - Public CI evidence across the claimed operating-system and Python matrix.
 - Exact-artifact build, TestPyPI verification, and release review described in
   `docs/RELEASING.md`.

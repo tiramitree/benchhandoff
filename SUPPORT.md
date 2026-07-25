@@ -1,13 +1,12 @@
 # Support
 
-BenchHandoff is currently unpublished and has no support SLA, guaranteed
-response time, compatibility promise, or production-support commitment.
+BenchHandoff has no versioned package release, support SLA, guaranteed response
+time, compatibility promise, or production-support commitment.
 
-After publication, use the repository's structured issue forms for reproducible
-bugs, independent reproduction reports, and proposed external-use or review
-evidence. Use the security process in [SECURITY.md](SECURITY.md) for
-vulnerabilities. General questions should be kept to a minimal, public,
-non-sensitive example.
+Use the repository's structured issue forms for reproducible bugs, independent
+reproduction reports, and proposed external-use or review evidence. Use the
+security process in [SECURITY.md](SECURITY.md) for vulnerabilities. General
+questions should be kept to a minimal, public, non-sensitive example.
 
 Before filing an issue:
 

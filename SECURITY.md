@@ -1,6 +1,6 @@
 # Security Policy
 
-BenchHandoff is an unpublished alpha, not a sandbox or security boundary. Child
+BenchHandoff is a pre-release alpha, not a sandbox or security boundary. Child
 commands inherit the caller's permissions and environment. Review
 [LIMITATIONS.md](LIMITATIONS.md) before running untrusted or sensitive work.
 
