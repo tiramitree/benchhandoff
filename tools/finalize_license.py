@@ -205,7 +205,8 @@ def _rollback(
         try:
             if path_exists_no_follow(license_path):
                 failures.append(
-                    "LICENSE appeared during a failed create; manual inspection required"
+                    "LICENSE appeared during a failed create; "
+                    "manual inspection required"
                 )
         except LicenseStateError as exc:
             failures.append(f"inspect failed LICENSE create: {exc}")
@@ -320,7 +321,11 @@ def _parser() -> argparse.ArgumentParser:
             "Prepare or apply the owner-selected BenchHandoff license transition."
         )
     )
-    parser.add_argument("--license", choices=sorted(DEFAULT_LICENSE_SPECS), required=True)
+    parser.add_argument(
+        "--license",
+        choices=sorted(DEFAULT_LICENSE_SPECS),
+        required=True,
+    )
     parser.add_argument("--license-file", type=Path, required=True)
     parser.add_argument(
         "--expected-source-commit",

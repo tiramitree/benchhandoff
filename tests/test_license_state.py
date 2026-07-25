@@ -70,32 +70,41 @@ class LicenseStateTests(unittest.TestCase):
         (repository / "LICENSING_STATUS.md").write_bytes(PENDING)
         return repository
 
-    def test_checked_in_pending_state_passes(self) -> None:
+    def test_checked_in_license_state_passes(self) -> None:
         state = VERIFY.inspect_license_state(REPOSITORY_ROOT)
-        self.assertEqual(state["mode"], "pending")
-        self.assertIsNone(state["spdx_expression"])
-        self.assertFalse((REPOSITORY_ROOT / "LICENSE").exists())
-
-    def test_cli_emits_canonical_pending_json(self) -> None:
-        stdout = io.StringIO()
-        with redirect_stdout(stdout):
-            self.assertEqual(VERIFY.main(["--repository", str(REPOSITORY_ROOT)]), 0)
-        parsed = json.loads(stdout.getvalue())
-        self.assertEqual(parsed["mode"], "pending")
-        self.assertEqual(
-            stdout.getvalue(),
-            json.dumps(parsed, sort_keys=True, separators=(",", ":")) + "\n",
+        self.assertIn(state["mode"], {"pending", "final"})
+        self.assertNotEqual(
+            (REPOSITORY_ROOT / "LICENSE").exists(),
+            (REPOSITORY_ROOT / "LICENSING_STATUS.md").exists(),
         )
 
-    def test_cli_require_final_rejects_pending_without_traceback(self) -> None:
-        stderr = io.StringIO()
-        with redirect_stderr(stderr):
-            code = VERIFY.main(
-                ["--repository", str(REPOSITORY_ROOT), "--require-final"]
+    def test_cli_emits_canonical_pending_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = self._repository(Path(temporary))
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(
+                    VERIFY.main(["--repository", str(repository)]),
+                    0,
+                )
+            parsed = json.loads(stdout.getvalue())
+            self.assertEqual(parsed["mode"], "pending")
+            self.assertEqual(
+                stdout.getvalue(),
+                json.dumps(parsed, sort_keys=True, separators=(",", ":")) + "\n",
             )
-        self.assertEqual(code, 1)
-        self.assertIn("final license state is required", stderr.getvalue())
-        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_cli_require_final_rejects_pending_without_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = self._repository(Path(temporary))
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                code = VERIFY.main(
+                    ["--repository", str(repository), "--require-final"]
+                )
+            self.assertEqual(code, 1)
+            self.assertIn("final license state is required", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_ambiguous_and_missing_states_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

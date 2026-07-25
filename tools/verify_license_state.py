@@ -179,7 +179,11 @@ def _setuptools_requirement(build_system: dict[str, object]) -> str:
         isinstance(value, str) for value in requirements
     ):
         raise LicenseStateError("build-system.requires must be a string array")
-    matches = [value for value in requirements if SETUPTOOLS_REQUIREMENT.fullmatch(value)]
+    matches = [
+        value
+        for value in requirements
+        if SETUPTOOLS_REQUIREMENT.fullmatch(value)
+    ]
     if len(matches) != 1:
         raise LicenseStateError("build-system must have one setuptools requirement")
     return matches[0]
