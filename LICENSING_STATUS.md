@@ -15,3 +15,14 @@ Before any public release:
 5. re-audit fixtures, disclosures, and third-party materials.
 
 This file is a status notice, not a software license.
+
+## Automation boundary
+
+The repository validator currently accepts this pending state. The package
+gate requires a final state and therefore remains intentionally closed.
+
+Only the exact owner responses `Apache-2.0` or `MIT` authorize the corresponding
+transition. After that decision, `tools/finalize_license.py` can prepare and
+apply the commit-bound transition; it accepts only canonical candidate bytes,
+updates the PEP 639 metadata, removes this notice, and verifies the result. The
+tool does not authorize or perform a commit, public upload, tag, or release.

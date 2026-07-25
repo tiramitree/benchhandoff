@@ -24,6 +24,42 @@ Stop unless every item is complete:
 If the license remains pending, do not build a publishable candidate, upload to
 TestPyPI, create a public repository, tag a release, or distribute artifacts.
 
+The state validator accepts either the documented pending state or one exact
+final state:
+
+```bash
+python tools/verify_license_state.py
+```
+
+`--require-final` rejects the pending state and is the package/release gate.
+The two allowed final choices are `Apache-2.0` and `MIT`. Their candidate bytes
+are bound to SPDX `license-list-data` commit
+`c4a7237ec8f4654e867546f9f409749300f1bf4c`. The MIT candidate replaces the
+template's `<year> <copyright holders>` with `2026 tiramitree`; no other
+license-text edits are accepted.
+
+After the owner explicitly chooses one option, keep the canonical candidate
+outside the checkout and first run the finalizer without `--apply`:
+
+```bash
+source_commit="$(git rev-parse HEAD)"
+python tools/finalize_license.py \
+  --license Apache-2.0 \
+  --license-file /absolute/path/to/canonical-candidate.txt \
+  --expected-source-commit "$source_commit"
+```
+
+Use `--license MIT` only if that is the owner's explicit choice. Review the
+JSON plan, then repeat the same command with `--apply`. The tool requires the
+exact clean source commit, writes `LICENSE`, adds PEP 639 metadata, raises the
+build backend floor to `setuptools>=77.0.3`, removes the pending notice, and
+verifies the resulting state. It does not commit, tag, upload, or publish.
+After application, run:
+
+```bash
+python tools/verify_license_state.py --require-final
+```
+
 ## 2. Validate the source commit
 
 Run the full test suite on every operating-system and Python version that the
@@ -34,6 +70,7 @@ until those jobs complete.
 Also run:
 
 ```bash
+python tools/verify_license_state.py --require-final
 python tools/verify_external_evidence.py
 PYTHONPATH=src python -m unittest discover -s tests -v
 python -m compileall -q src tests tools benchmarks examples

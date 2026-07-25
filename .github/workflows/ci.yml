@@ -43,6 +43,9 @@ jobs:
       - name: Compile source and validation assets
         run: python -m compileall -q src tests tools benchmarks examples
 
+      - name: Verify pending or final license state
+        run: python tools/verify_license_state.py
+
       - name: Verify external-evidence ledger
         run: python tools/verify_external_evidence.py
 
@@ -107,12 +110,7 @@ jobs:
           python-version: "3.12"
 
       - name: Enforce the explicit license gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s LICENSE
-          test ! -e LICENSING_STATUS.md
-          python -c 'import pathlib,tomllib; p=tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]; assert p.get("license") in {"Apache-2.0","MIT"}; assert "LICENSE" in p.get("license-files",[])'
+        run: python tools/verify_license_state.py --require-final
 
       - name: Build and inspect sdist and wheel
         shell: bash
