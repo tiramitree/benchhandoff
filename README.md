@@ -90,11 +90,16 @@ distribution, Linux result, production result, independent reproduction, or
 adoption evidence. The exact validated source is recorded in
 [VALIDATION_20260724.md](VALIDATION_20260724.md).
 
-The cooperative writer-lock extension is later than that four-runtime
-preflight. Its current local CPython 3.12.10 run completed 129 tests with 126
-passes and the same 3 symlink-permission skips, with no failures or errors.
-That extension has not yet been rerun under CPython 3.11, 3.13, or 3.14 and
-does not change the absence of public online CI or independent validation.
+The later cooperative writer-lock extension at clean source `d7b2cf6...` was
+also exercised under CPython 3.11.15, 3.12.13, 3.13.14, and 3.14.6. Each
+runtime compiled 38 Python files from source, validated the zero external-
+evidence ledger, and completed the current 129-test suite with 126 passes and
+the same 3 symlink-permission skips, with no failures or errors. This is four
+complete runs of one suite, not one 516-test suite. The commit-bound record is
+under
+`benchmarks/results/windows_py311_314_writer_lock_matrix_commit_d7b2cf6_20260725/`.
+It does not change the absence of Linux, public online CI, release,
+independent-validation, production, or adoption evidence.
 
 ## Five-minute quickstart
 

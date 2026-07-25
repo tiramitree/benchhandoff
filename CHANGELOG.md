@@ -48,6 +48,10 @@ and no external adoption is claimed.
   six focused lock regressions, and a two-process synthetic contention
   benchmark. This is not a remote lease, distributed coordinator,
   network-filesystem proof, or hostile-writer boundary.
+- A commit-bound local Windows writer-lock matrix across CPython 3.11.15,
+  3.12.13, 3.13.14, and 3.14.6. Each runtime completed 129 tests with 126
+  passes and the same 3 permission skips. This is not Linux, online CI,
+  public-release, production, independent, or adoption evidence.
 
 ### Security
 
