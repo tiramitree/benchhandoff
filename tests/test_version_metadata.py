@@ -19,6 +19,17 @@ class VersionMetadataTests(unittest.TestCase):
         )
         self.assertEqual(metadata["project"]["version"], __version__)
 
+    def test_tested_python_classifiers_match_checked_in_matrix(self) -> None:
+        metadata = tomllib.loads(
+            (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        classifiers = set(metadata["project"]["classifiers"])
+        expected = {
+            f"Programming Language :: Python :: {version}"
+            for version in ("3.11", "3.12", "3.13", "3.14")
+        }
+        self.assertTrue(expected.issubset(classifiers))
+
     def test_cli_reports_the_same_version(self) -> None:
         stdout = io.StringIO()
         with redirect_stdout(stdout), self.assertRaises(SystemExit) as raised:

@@ -40,6 +40,9 @@ and no external adoption is claimed.
 - A canonical zero-baseline external-evidence ledger, strict structural and
   count validator, relationship/consent-aware Issue forms, and documented
   review, deduplication, and retraction rules.
+- Local Windows compatibility preflight across CPython 3.11 through 3.14,
+  including one-wheel installation and fail -> bound resume -> verify smoke
+  coverage. This is not online CI or a final licensed distribution.
 
 ### Security
 

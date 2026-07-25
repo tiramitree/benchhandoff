@@ -69,14 +69,17 @@ optional package build uses setuptools. Running from source needs no install.
 
 ## Validation status
 
-As of 2026-07-24, the local Windows/Python 3.12.10 suite ran 121 tests on
-implementation commit `69ddf7556e037eddb041c77188fcf0ea03871f30`: 118 passed
-and 3 symlink-creation tests were skipped because this Windows account lacks
-that privilege. There were no failures or errors. The checked-in CI matrix
-covers Ubuntu 24.04 and Windows Server 2025 with Python 3.11 through 3.14, but it
-is only a proposed test plan until an online run exists. The canonical
-external-evidence validator also passed with all four public counts at zero. No
-production, third-party, or external-adoption claim is made. See
+On 2026-07-25, the local Windows preflight exercised CPython 3.11.15, 3.12.13,
+3.13.14, and 3.14.6. Each runtime completed the 122-test suite with 119 passes
+and the same 3 symlink-creation permission skips, with no failures or errors.
+One pre-license wheel was then installed under all four runtimes; metadata and
+CLI help passed, and each installation completed the deliberate fail -> bound
+resume -> verify recovery path. The checked-in CI matrix additionally covers
+Ubuntu 24.04 and Windows Server 2025, but it remains a proposed plan until an
+online run exists. The canonical external-evidence validator passed with all
+four public counts at zero. This preflight is not a final licensed
+distribution, Linux result, production result, independent reproduction, or
+adoption evidence. The exact validated source is recorded in
 [VALIDATION_20260724.md](VALIDATION_20260724.md).
 
 ## Five-minute quickstart
