@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = []
 authors = [
-  { name = "tiramitree", email = "89479100+tiramitree@users.noreply.github.com" },
+  { name = "tiramitree" },
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
