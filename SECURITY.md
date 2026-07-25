@@ -17,14 +17,13 @@ branch.
 
 ## Reporting a vulnerability
 
-Before publication, enable GitHub private vulnerability reporting and use that
-private channel for security reports. Include the affected commit or release,
-impact, a minimal reproduction, and suggested mitigations when known.
+GitHub private vulnerability reporting is enabled for this repository. Use
+[Report a vulnerability](https://github.com/tiramitree/benchhandoff/security/advisories/new)
+for security reports. Include the affected commit or release, impact, a
+minimal reproduction, and suggested mitigations when known.
 
-Do not publish a supported release until that private channel is available. Do
-not use a public issue for exploit details, secrets, private data, vulnerable run
-evidence, or a working proof of concept. A public issue is not a substitute for
-a configured private reporting path.
+Do not use a public issue for exploit details, secrets, private data,
+vulnerable run evidence, or a working proof of concept.
 
 Do not upload raw run directories, `plan.json`, `state.json`, `bundle.json`,
 `events.jsonl`, task logs, absolute local paths, environment dumps, credentials,

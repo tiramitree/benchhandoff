@@ -71,7 +71,8 @@ tool.
 Use precise language:
 
 - `observed locally` only for a command actually run and retained as evidence;
-- `proposed CI matrix` until a public workflow run exists;
+- `proposed CI matrix` until a public workflow run exists, and `public CI`
+  only with the exact run URL, commit, job outcomes, and skips;
 - `independently reproduced` only when an identifiable outside reproduction is
   linkable; and
 - `released` or `published` only after the public artifacts exist.

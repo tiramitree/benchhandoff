@@ -23,9 +23,10 @@ is not a release, and no external adoption is claimed.
 - A three-task recovery example that exercises exit `20`, partial-output
   quarantine, suffix-only resume, and final verification.
 - A top-level `--version` command plus source/package metadata consistency tests.
-- A proposed eight-job Python/operating-system matrix, commit-pinned Actions,
+- A public eight-job Python/operating-system matrix, commit-pinned Actions,
   canonical machine-readable benchmark artifacts, and build-once exact-wheel
-  smoke testing behind the explicit license gate.
+  smoke testing behind the explicit license gate. The first complete green
+  run is `pre-rewrite-run-retired` at source `pre-rewrite-commit-retired...`.
 - A single cross-platform synthetic-reproduction entrypoint that refuses dirty
   source, overwrite, linked or nonempty parents, and in-repository output, then
   writes two raw records, a bounded summary, a verified SHA-256 manifest, and a
@@ -63,7 +64,6 @@ is not a release, and no external adoption is claimed.
 
 ### Pending before any release
 
-- Public CI evidence across the claimed operating-system and Python matrix.
 - Exact-artifact build, TestPyPI verification, and release review described in
   `docs/RELEASING.md`.
 - A bounded, cross-platform, reparse-safe diagnostic export design; an initial

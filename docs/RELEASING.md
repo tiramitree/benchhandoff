@@ -5,6 +5,11 @@ not evidence that a release has occurred, and it does not authorize publication.
 CI may build downloadable diagnostic artifacts, but no package-registry
 publishing workflow is enabled.
 
+The source repository is public under Apache-2.0. Public CI run
+`pre-rewrite-run-retired` is the first complete green source, evidence, build, and
+exact-wheel smoke run. There is still no Git tag, GitHub Release, TestPyPI or
+PyPI publication, supported release line, or external-adoption claim.
+
 ## 1. Resolve release blockers
 
 Stop unless every item is complete:

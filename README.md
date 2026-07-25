@@ -1,5 +1,7 @@
 # BenchHandoff v0.1
 
+[![CI](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
+
 BenchHandoff is a narrow local CLI for resuming a flat, sequential batch of
 expensive commands. It fingerprints the suite and declared inputs, records
 per-task logs and declared-output hashes, and skips a previously completed task
@@ -65,7 +67,7 @@ guarantee. See [LIMITATIONS.md](LIMITATIONS.md).
 
 ## Requirements and implemented execution targets
 
-- Python 3.11 or newer. The checked-in CI plan covers CPython 3.11 through 3.14.
+- Python 3.11 or newer. Public CI covers CPython 3.11 through 3.14.
 - Windows or Linux for child execution. Linux requires `/proc` so the runner can
   bind a PID to a stable process-start identity.
 - No third-party runtime packages.
@@ -79,17 +81,44 @@ optional package build uses setuptools. Running from source needs no install.
 
 ## Validation status
 
+The first complete green public
+[CI run](https://github.com/tiramitree/benchhandoff/actions)
+finished on 2026-07-26 CST at exact source
+`pre-rewrite-commit-retired`. All eight Ubuntu 24.04 and
+Windows Server 2025 jobs across CPython 3.11 through 3.14 ran all 158 tests
+with no failures, errors, or skips. The dependent evidence job generated and
+re-verified the five-file synthetic package. The package job built one sdist
+and one wheel, passed strict Twine and embedded-license checks, installed the
+exact wheel outside the checkout, and completed the deliberate failure ->
+resume -> verify smoke. The uploaded wheel is 50,705 bytes with SHA-256
+`4c0f51cf8af48a6bd9ddeec2814ed4abe513a4f0607c61d0cf71b22020296f3d`;
+the sdist is 84,290 bytes with SHA-256
+`77abe1423023c1971b2e69ec53c5b230d7c237ccd4103fb3975e7ca3aed1d003`.
+
+Publication did not pass on the first attempt. Public
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+exercised a symlink path that the local Windows account could not create and
+exposed an exception-boundary mismatch in all eight matrix jobs. Commit
+`pre-rewrite-commit-retired` normalized the failure and added a
+platform-independent regression. Public
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+then passed the complete matrix and evidence job, but the package job exposed a
+`pipefail`/early-reader archive-listing error. Commit
+`pre-rewrite-commit-retired` retained the archive checks while
+materializing each listing before matching it. These are maintainer-operated
+CI results, not independent reproduction, production reliability, or adoption.
+
 On 2026-07-25, the local Windows preflight exercised CPython 3.11.15, 3.12.13,
 3.13.14, and 3.14.6. Each runtime completed the 122-test suite with 119 passes
 and the same 3 symlink-creation permission skips, with no failures or errors.
 One pre-license wheel was then installed under all four runtimes; metadata and
 CLI help passed, and each installation completed the deliberate fail -> bound
-resume -> verify recovery path. The checked-in CI matrix additionally covers
-Ubuntu 24.04 and Windows Server 2025, but it remains a proposed plan until an
-online run exists. The canonical external-evidence validator passed with all
-four public counts at zero. This preflight is not a final licensed
-distribution, Linux result, production result, independent reproduction, or
-adoption evidence. The exact validated source is recorded in
+resume -> verify recovery path. At that historical checkpoint, the checked-in
+Ubuntu 24.04 and Windows Server 2025 matrix was still only a proposal. The
+canonical external-evidence validator passed with all four public counts at
+zero. This preflight was not a final licensed distribution, Linux result,
+production result, independent reproduction, or adoption evidence. The exact
+validated source is recorded in
 [VALIDATION_20260724.md](VALIDATION_20260724.md).
 
 The later cooperative writer-lock extension at clean source `d7b2cf6...` was
@@ -387,13 +416,20 @@ python -m unittest discover -s tests -v
 
 ## Public evidence and independent reproduction
 
-The CI definition separates an eight-job operating-system/Python test matrix, a
+The public CI separates an eight-job operating-system/Python test matrix, a
 single canonical synthetic-evidence job, and a package job that builds once,
 checks both distributions, installs the exact wheel outside the checkout, runs
 the failure-to-resume example, and uploads only those tested bytes. It is
-license-gated and remains a proposed plan until public workflow URLs exist.
+license-gated. The first complete green execution is
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions);
+its uploaded artifact archives are retained by GitHub for 14 days. The
+commit-bound record inside the evidence artifact reports 18 versus 13
+synthetic child calls, 5 versus 0 duplicate successful calls, and identical
+final output bytes for restart-from-zero versus evidence-verified resume. Those
+are deterministic synthetic work counts, not elapsed-time speed or a
+real-workload performance result.
 
-After publication, structured issue forms can record reproducible bugs and
+Structured issue forms can record reproducible bugs and
 bounded independent reproduction attempts, independent use, institutional
 adoption, and third-party review. An opened form does not create a count.
 Only a human-reviewed record merged into the canonical ledger does.
