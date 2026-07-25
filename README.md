@@ -101,6 +101,18 @@ under
 It does not change the absence of Linux, public online CI, release,
 independent-validation, production, or adoption evidence.
 
+At clean source `8d789e9...`, the local CPython 3.12.10 orphan-lock diagnostic
+then used two processes and a real hard exit. Two read-only recovery decisions
+were identical; bound lock recovery changed zero run-evidence files, changed no
+partial output, and left the attempt count at 1. A separate bound run resume
+completed and verified attempt 2 while preserving the original lock tombstone.
+The 2239-byte three-file record is under
+`benchmarks/results/windows_py312_writer_recovery_commit_8d789e9_20260725/`.
+It is local synthetic Windows control-plane evidence, not Linux validation,
+safe-child-retry proof, public CI, production reliability, independent
+reproduction, distributed coordination, hostile-writer protection, or
+external adoption.
+
 ## Five-minute quickstart
 
 The recovery example deliberately fails once after writing a partial output.
