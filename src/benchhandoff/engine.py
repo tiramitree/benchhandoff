@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from benchhandoff.errors import BenchHandoffError, EvidenceError
+from benchhandoff.errors import BenchHandoffError, BoundaryError, EvidenceError
 from benchhandoff.model import (
     MAX_SUITE_NAME_UTF8_BYTES,
     MAX_SUITE_PATH_REFERENCES,
@@ -1466,7 +1466,10 @@ def _open_attempt_log(path: Path, *, create: bool, label: str) -> Any:
     if create:
         flags |= os.O_CREAT | os.O_EXCL
     else:
-        existing = file_identity(path, label=label)
+        try:
+            existing = file_identity(path, label=label)
+        except BoundaryError as exc:
+            raise EvidenceError(str(exc)) from exc
         if existing["size"] != 0:
             raise EvidenceError(f"{label} must be an empty regular file")
         flags |= getattr(os, "O_NOFOLLOW", 0)

@@ -13,7 +13,7 @@ if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
 import benchhandoff.engine as engine
-from benchhandoff.errors import EvidenceError
+from benchhandoff.errors import BoundaryError, EvidenceError
 from tests.test_audit_regressions import IDENTITY, completed_state, evidence_plan
 from tests.workspace_temp import WorkspaceTemporaryDirectory
 
@@ -150,6 +150,23 @@ class StateMachineHardeningTests(unittest.TestCase):
             with self.assertRaises(EvidenceError):
                 engine._prepare_attempt_logs(stdout, stderr)
             self.assertEqual(target.read_bytes(), b"")
+
+    def test_existing_log_boundary_failure_is_an_evidence_error(self) -> None:
+        with WorkspaceTemporaryDirectory(prefix="benchhandoff-log-boundary-") as temporary:
+            root = Path(temporary)
+            stdout = root / "attempt.stdout.log"
+            stderr = root / "attempt.stderr.log"
+            stdout.write_bytes(b"")
+            stderr.write_bytes(b"")
+            with (
+                mock.patch.object(
+                    engine,
+                    "file_identity",
+                    side_effect=BoundaryError("synthetic log boundary"),
+                ),
+                self.assertRaisesRegex(EvidenceError, "synthetic log boundary"),
+            ):
+                engine._prepare_attempt_logs(stdout, stderr)
 
     def test_attempt_history_limit_is_enforced_before_full_validation(self) -> None:
         with WorkspaceTemporaryDirectory(prefix="benchhandoff-attempt-limit-") as temporary:
