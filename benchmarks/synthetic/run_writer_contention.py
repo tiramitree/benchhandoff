@@ -211,7 +211,7 @@ def main() -> int:
     result = run()
     rendered = json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
     if arguments.output is not None:
-        with arguments.output.open("x", encoding="utf-8") as handle:
+        with arguments.output.open("x", encoding="utf-8", newline="\n") as handle:
             handle.write(rendered)
     print(rendered, end="")
     return 0

@@ -25,6 +25,9 @@ class WriterContentionBenchmarkTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
+            output_bytes = output.read_bytes()
+            self.assertNotIn(b"\r", output_bytes)
+            self.assertTrue(output_bytes.endswith(b"\n"))
             record = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(record, json.loads(completed.stdout))
             self.assertEqual(
