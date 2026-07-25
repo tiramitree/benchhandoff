@@ -196,7 +196,7 @@ not ready merely because its happy path works.
 | Fixed failure-to-resume behavior | `examples/recovery_pipeline/`, `tests/test_recovery_example.py` | Real model or simulator integration |
 | Stale reviewed-decision refusal without mutation | `tests/test_resume_decision.py`, focused reproduction-package JSON | Signature security, locking, or hostile concurrency |
 | Cooperative local writer contention | `src/benchhandoff/writer_lock.py`, `tests/test_writer_lock.py`, `benchmarks/synthetic/run_writer_contention.py` | Remote lease, fencing, network-filesystem proof, hostile-writer protection, or production reliability |
-| Evidence-bound orphan-lock recovery | `src/benchhandoff/writer_lock.py`, `tests/test_writer_lock_recovery.py`, `tests/test_writer_lock_recovery_boundaries.py` | Safe child retry, distributed recovery, hostile-writer protection, or production reliability |
+| Evidence-bound orphan-lock recovery | `src/benchhandoff/writer_lock.py`, `tests/test_writer_lock_recovery.py`, `tests/test_writer_lock_recovery_boundaries.py`, `benchmarks/synthetic/run_writer_recovery.py` | Safe child retry, distributed recovery, hostile-writer protection, or production reliability |
 | 18→13 and 5→0 counts | Reproduction-package JSON plus `SHA256SUMS.txt` | Wall-clock speedup or external use |
 | Record semantics | `docs/EVIDENCE_FORMAT.md`, `docs/ARCHITECTURE.md` | Signed provenance or trusted time |
 | Known failure and threat boundaries | `LIMITATIONS.md` | Security certification |

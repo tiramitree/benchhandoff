@@ -28,3 +28,13 @@ bound `resume`. A passing run requires:
 
 Elapsed times are raw wall-clock observations for that invocation. They are not
 presented as a comparison, production measurement, or independent result.
+`run_writer_contention.py` is a lower-level two-process diagnostic for the
+cooperative writer exclusion boundary. `run_writer_recovery.py` is the paired
+orphan-control diagnostic: a second process hard-exits while holding the lock,
+two read-only decisions must match, bound recovery must preserve the original
+record as a hard-linked tombstone without changing run evidence or attempt
+count, and a separate bound resume must complete and verify attempt 2.
+
+Both scripts report deterministic state counts. Neither is elapsed-time,
+production, network-filesystem, hostile-writer, safe-child-retry, independent-
+reproduction, or adoption evidence.

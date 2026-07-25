@@ -314,6 +314,21 @@ cleanly releases the holder and completes attempt 2. This is local cooperative
 filesystem behavior, not timing, production reliability, network-filesystem,
 distributed-scheduler, or hostile-writer evidence.
 
+The orphan-recovery diagnostic uses a second process that acquires the same
+writer lock and then calls `os._exit(0)`. It performs two identical read-only
+lock inspections, applies the exact bound recovery, proves zero run-evidence or
+partial-output changes and an unchanged attempt count, preserves the source
+record as a tombstone, then separately performs bound run resume and verify:
+
+```powershell
+python benchmarks\synthetic\run_writer_recovery.py `
+  --output writer-recovery.json
+```
+
+This measures deterministic local control-plane state only. It is not evidence
+that retrying an arbitrary child is safe, nor production reliability, hostile-
+writer protection, distributed coordination, or external adoption.
+
 ## Tests
 
 ```powershell
