@@ -4,6 +4,10 @@ BenchHandoff is an unpublished alpha, not a sandbox or security boundary. Child
 commands inherit the caller's permissions and environment. Review
 [LIMITATIONS.md](LIMITATIONS.md) before running untrusted or sensitive work.
 
+The sibling writer lock serializes cooperating local BenchHandoff mutation
+entrypoints. Do not use it as authorization, hostile-writer protection,
+distributed fencing, or a remote lease.
+
 ## Supported versions
 
 There is no public supported release yet and no security-support or

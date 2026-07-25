@@ -70,6 +70,22 @@ stable Windows or Linux process-start token is captured, state is updated with
 the PID/token and the guard is disarmed. An unresolved guard is intentionally
 not auto-recovered because the runner cannot prove whether the child ran.
 
+## Cooperative writer serialization
+
+Before either public mutation entrypoint loads or creates run evidence, it
+creates `.<run-name>.benchhandoff-writer-lock.json` beside the run directory
+with `O_EXCL`. The canonical record binds the normalized run path, owner PID,
+available process-start token, and a random nonce. The writer retains the lock
+through all state transitions, child execution, bundle construction, and final
+verification, then re-hashes the exact record before unlinking it.
+
+A second local BenchHandoff writer therefore stops before its load/check/mutate
+sequence. A hard exit can leave the sibling record, which intentionally blocks
+automatic mutation rather than being timed out or broken. This is a
+cooperative local lock, not an expiring lease, fencing protocol,
+network-filesystem guarantee, distributed coordinator, or hostile-writer
+boundary. Read-only `inspect` and `verify` do not claim it.
+
 ## Review-to-execution binding
 
 `inspect` is a mutation-free eligibility check for stable run evidence. It
@@ -92,9 +108,11 @@ would mutate the evidence being reviewed; unbound resume retains the existing
 reconciliation behavior.
 
 The decision is deliberately ephemeral and has no timestamp. It is a content
-binding, not authentication, a signature, a cross-process lock, or a lease.
-Runs still assume one trusted writer, and a small check-to-mutation race remains
-outside the v0.1 threat model.
+binding, not authentication, a signature, or a lease. The separate writer lock
+serializes cooperating mutation entrypoints across both digest checks and the
+first transition, closing their local check-to-mutation race. Direct filesystem
+mutation, lock removal, remote coordination, and hostile writers remain outside
+the v0.1 threat model.
 
 ## Exact evidence topology
 

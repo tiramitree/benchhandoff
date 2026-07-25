@@ -144,11 +144,14 @@ agent approval step. If a log, state file, relevant input, completed output, or
 partial output changes, the digest changes and bound resume stops before the
 `run_resumed` event, quarantine move, or child launch.
 
-This closes a practical stale-approval gap, not the entire concurrency problem.
-The digest is unsigned and optional, and there is still a small
-check-to-transition race. BenchHandoff has no global lock and assumes one
-trusted writer; the interface must not be described as cryptographic
-authorization or hostile-writer protection.
+This closes a practical stale-approval gap. The digest is unsigned and
+optional, so it must not be described as cryptographic authorization. A
+separate `O_EXCL` sibling writer lock now spans both digest checks and the
+complete mutation path. The deterministic contention benchmark holds that lock
+in a second process, observes one rejected resume with zero run-evidence file
+changes and no added attempt, then releases it and completes attempt 2. The
+lock coordinates cooperating local entrypoints only; it is not hostile-writer,
+remote-lease, network-filesystem, or distributed-scheduler protection.
 
 ## A feature that was not shipped
 
@@ -171,6 +174,7 @@ not ready merely because its happy path works.
 | Root-entry, regular-file-set, path, and non-overwrite boundaries | `src/benchhandoff/storage.py`, `tests/test_storage_hardening.py`, `tests/test_audit_regressions.py` | Protection from a privileged concurrent attacker or a complete Windows reparse-point audit |
 | Fixed failure-to-resume behavior | `examples/recovery_pipeline/`, `tests/test_recovery_example.py` | Real model or simulator integration |
 | Stale reviewed-decision refusal without mutation | `tests/test_resume_decision.py`, focused reproduction-package JSON | Signature security, locking, or hostile concurrency |
+| Cooperative local writer contention | `src/benchhandoff/writer_lock.py`, `tests/test_writer_lock.py`, `benchmarks/synthetic/run_writer_contention.py` | Remote lease, fencing, network-filesystem proof, hostile-writer protection, or production reliability |
 | 18→13 and 5→0 counts | Reproduction-package JSON plus `SHA256SUMS.txt` | Wall-clock speedup or external use |
 | Record semantics | `docs/EVIDENCE_FORMAT.md`, `docs/ARCHITECTURE.md` | Signed provenance or trusted time |
 | Known failure and threat boundaries | `LIMITATIONS.md` | Security certification |

@@ -52,6 +52,7 @@ from benchhandoff.storage import (
     resolve_member,
     utc_now,
 )
+from benchhandoff.writer_lock import WriterLock
 
 SCHEMA_VERSION = 1
 PLAN_FILE = "plan.json"
@@ -2173,7 +2174,11 @@ def start_run(suite_file: Path | str, run_directory: Path | str) -> RunResult:
     """Start while converting operational failures into a stable evidence error."""
 
     try:
-        return _start_run_checked(suite_file, run_directory)
+        writer_lock = WriterLock.acquire(run_directory)
+        try:
+            return _start_run_checked(suite_file, run_directory)
+        finally:
+            writer_lock.release()
     except BenchHandoffError:
         raise
     except (KeyError, IndexError, TypeError, ValueError, OSError) as exc:
@@ -2248,10 +2253,14 @@ def resume_run(
     """Resume while converting damaged evidence into a stable evidence error."""
 
     try:
-        return _resume_run_checked(
-            run_directory,
-            expected_decision_sha256=expected_decision_sha256,
-        )
+        writer_lock = WriterLock.acquire(run_directory)
+        try:
+            return _resume_run_checked(
+                run_directory,
+                expected_decision_sha256=expected_decision_sha256,
+            )
+        finally:
+            writer_lock.release()
     except EvidenceError:
         raise
     except BenchHandoffError as exc:

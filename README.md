@@ -17,6 +17,12 @@ view and SHA-256. A caller can pass that digest back to `resume`; if any bound
 evidence, relevant input, completed output, or partial output changed after
 review, the runner refuses the bound resume before its first transition.
 
+Every `start` and `resume` mutation also holds one sibling writer-lock record
+created with `O_EXCL`. A second cooperating BenchHandoff process targeting the
+same run is refused before it can read and then mutate run evidence. The lock
+is local coordination, not a remote lease or security boundary; an orphaned
+record remains fail-closed for manual review.
+
 A manual point-in-time name check against PyPI, npm, crates.io, and GitHub found
 no exact match on 2026-07-24. That is not a trademark or permanent-availability
 conclusion; repeat the check immediately before publication. This repository
@@ -44,9 +50,11 @@ For declared files, v0.1:
    inputs, completed outputs, and unverified output/quarantine observations;
 9. optionally requires that exact decision SHA-256 and checks it again
    immediately before the first resume transition;
-10. uses per-file same-directory atomic replacement for state and the
+10. serializes cooperating local `start` and `resume` writers with an exclusive
+    sibling lock and refuses contention before run-evidence mutation;
+11. uses per-file same-directory atomic replacement for state and the
     content-monotonic event chain; and
-11. re-hashes the complete declared evidence set and rejects unexpected run-root
+12. re-hashes the complete declared evidence set and rejects unexpected run-root
     entries during `verify`.
 
 These guarantees apply only to declared files. BenchHandoff is not a sandbox,
@@ -81,6 +89,12 @@ four public counts at zero. This preflight is not a final licensed
 distribution, Linux result, production result, independent reproduction, or
 adoption evidence. The exact validated source is recorded in
 [VALIDATION_20260724.md](VALIDATION_20260724.md).
+
+The cooperative writer-lock extension is later than that four-runtime
+preflight. Its current local CPython 3.12.10 run completed 129 tests with 126
+passes and the same 3 symlink-permission skips, with no failures or errors.
+That extension has not yet been rerun under CPython 3.11, 3.13, or 3.14 and
+does not change the absence of public online CI or independent validation.
 
 ## Five-minute quickstart
 
@@ -184,10 +198,19 @@ candidates. Bound resume recomputes it twice and exits `30` before the
 pending event instead of reconciling it. Plain `resume` remains compatible and
 may reconcile the two modeled pending-event states.
 
-The decision is not stored, signed, or a lock. It narrows accidental
-review-to-execution drift for one trusted writer; it does not remove the final
-check-to-mutation race or defend against hostile concurrent mutation. See
-[LIMITATIONS.md](LIMITATIONS.md).
+The decision is not stored, signed, or itself a lock. The mutation path now
+holds a sibling writer lock across both decision checks and every subsequent
+transition, quarantine move, child launch, and final verification. That closes
+the check-to-mutation race between cooperating local BenchHandoff writers. It
+does not prevent another program, privileged process, or hostile filesystem
+writer from changing bytes directly. See [LIMITATIONS.md](LIMITATIONS.md).
+
+The lock record is named
+`.<run-name>.benchhandoff-writer-lock.json` beside the run directory and records
+the owner PID, supported process-start token, normalized run path, and a random
+nonce. Clean exit removes only the exact bytes acquired by that writer. A hard
+process exit can leave the record behind; automatic `start` and `resume` then
+stop instead of guessing that ownership is stale.
 
 Commands should be idempotent and avoid undeclared side effects. A task that
 completed externally but was not durably recorded is deliberately retried. A
@@ -241,6 +264,21 @@ one-task diagnostic additionally changes a reviewed partial output, proves the
 stale decision is rejected without changing state, events, quarantine, output,
 or attempt count, then refreshes the decision and completes. It remains at
 `benchmarks/synthetic/run_benchmark.py`.
+
+A separate deterministic contention benchmark starts from one failed attempt,
+holds the run's writer lock in a second Python process, and attempts one
+competing resume:
+
+```powershell
+python benchmarks\synthetic\run_writer_contention.py `
+  --output writer-contention.json
+```
+
+It asserts two participating processes, one rejected competing resume, zero
+changed run-evidence files, an unchanged partial output and attempt count, then
+cleanly releases the holder and completes attempt 2. This is local cooperative
+filesystem behavior, not timing, production reliability, network-filesystem,
+distributed-scheduler, or hostile-writer evidence.
 
 ## Tests
 

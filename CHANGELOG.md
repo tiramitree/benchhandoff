@@ -43,6 +43,11 @@ and no external adoption is claimed.
 - Local Windows compatibility preflight across CPython 3.11 through 3.14,
   including one-wheel installation and fail -> bound resume -> verify smoke
   coverage. This is not online CI or a final licensed distribution.
+- A cooperative local cross-process writer lock around every `start` and
+  `resume` mutation, exact-record release checks, fail-closed orphan behavior,
+  six focused lock regressions, and a two-process synthetic contention
+  benchmark. This is not a remote lease, distributed coordinator,
+  network-filesystem proof, or hostile-writer boundary.
 
 ### Security
 

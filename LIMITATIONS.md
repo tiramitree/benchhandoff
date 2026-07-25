@@ -72,12 +72,22 @@ in scope.
 - `inspect` decisions are optional content bindings. Plain `resume` remains
   available and can reconcile modeled pending events; policy enforcement
   therefore depends on the caller supplying `--expected-decision-sha256`.
-- A bound resume rechecks its decision immediately before the first transition,
-  but there is still a check-to-mutation race. The digest is not a secret,
-  signature, authorization service, cross-process lock, or defense against a
-  privileged or hostile concurrent writer.
-- Runs assume one trusted writer. There is no cross-process lock, remote lease,
-  distributed storage, remote worker, scheduler, or multi-host clock model.
+- A bound resume rechecks its decision immediately before the first transition.
+  The digest is not a secret, signature, authorization service, or lock.
+  `start` and `resume` separately hold a cooperative local writer lock across
+  their complete mutation path, so two BenchHandoff processes cannot both
+  cross the check-to-mutation window for one run.
+- The sibling writer lock uses local filesystem `O_EXCL` creation. It is not a
+  remote lease, does not expire, and has no heartbeat, fencing token,
+  network-filesystem proof, distributed storage, remote worker, scheduler, or
+  multi-host clock model.
+- A normal return or handled failure removes only the exact lock bytes acquired
+  by that process. A hard process exit can leave an orphan lock. Future
+  mutation remains blocked until a human establishes that no writer is active
+  and handles the exact sibling file; v0.1 does not auto-break it.
+- The lock coordinates cooperating BenchHandoff entrypoints. It is not a
+  defense against a privileged or hostile process that edits or removes the
+  lock or run evidence directly.
 
 ## Evidence and reproducibility
 
