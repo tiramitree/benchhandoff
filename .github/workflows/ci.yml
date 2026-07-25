@@ -49,6 +49,9 @@ jobs:
       - name: Verify external-evidence ledger
         run: python tools/verify_external_evidence.py
 
+      - name: Enforce public privacy gate
+        run: python tools/verify_public_privacy.py
+
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
         env:
@@ -119,6 +122,7 @@ jobs:
           python -m pip install --disable-pip-version-check build==1.5.0 twine==6.2.0
           python -m build
           python -m twine check --strict dist/*
+          python tools/verify_public_privacy.py --dist dist
           test "$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
           wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
