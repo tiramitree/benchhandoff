@@ -21,7 +21,7 @@ Every `start` and `resume` mutation also holds one sibling writer-lock record
 created with `O_EXCL`. A second cooperating BenchHandoff process targeting the
 same run is refused before it can read and then mutate run evidence. The lock
 is local coordination, not a remote lease or security boundary; an orphaned
-record remains fail-closed for manual review.
+record remains fail-closed until an explicit evidence-bound recovery succeeds.
 
 A manual point-in-time name check against PyPI, npm, crates.io, and GitHub found
 no exact match on 2026-07-24. That is not a trademark or permanent-availability
@@ -112,6 +112,23 @@ It is local synthetic Windows control-plane evidence, not Linux validation,
 safe-child-retry proof, public CI, production reliability, independent
 reproduction, distributed coordination, hostile-writer protection, or
 external adoption.
+
+At clean source `9bc9233...`, the complete orphan-recovery source, test, and
+diagnostic matrix then passed under CPython 3.11.15, 3.12.13, 3.13.14, and
+3.14.6. Each runtime compiled 42 Python files, validated the zero external-
+evidence ledger, and completed the 145-test suite with 142 passes, the same 3
+Windows symlink-permission skips, and no failures or errors. Each runtime also
+completed the direct two-process hard-exit recovery diagnostic with two
+identical inspections, zero changed run-evidence files, attempt 1 preserved
+during lock recovery, attempt 2 verified only after a separate bound resume,
+and the tombstone preserved. This is four complete suite runs and four
+diagnostic runs, not one 580-test suite. The 5709-byte three-file record is
+under
+`benchmarks/results/windows_py311_314_writer_recovery_matrix_commit_9bc9233_20260725/`.
+It remains local synthetic Windows control-plane evidence, not Linux or public
+CI validation, a licensed release, safe-child-retry proof, production
+reliability, independent reproduction, distributed coordination, hostile-
+writer protection, third-party review, or external adoption.
 
 ## Five-minute quickstart
 
