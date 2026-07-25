@@ -123,8 +123,12 @@ jobs:
           test "$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
           wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
           sdist="$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
-          unzip -Z1 "$wheel" | grep -Eq '(^|/)licenses/LICENSE$'
-          tar -tzf "$sdist" | grep -Eq '/LICENSE$'
+          wheel_files="$RUNNER_TEMP/benchhandoff-wheel-files.txt"
+          sdist_files="$RUNNER_TEMP/benchhandoff-sdist-files.txt"
+          unzip -Z1 "$wheel" > "$wheel_files"
+          tar -tzf "$sdist" > "$sdist_files"
+          grep -Eq '(^|/)licenses/LICENSE$' "$wheel_files"
+          grep -Eq '/LICENSE$' "$sdist_files"
           (
             cd dist
             sha256sum * > SHA256SUMS
