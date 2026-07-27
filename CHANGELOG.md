@@ -49,6 +49,11 @@ not a PyPI publication, supported-production claim, or external-adoption event.
   jobs verified the canonical synthetic evidence and build-once exact
   distribution. This is maintainer-operated synthetic validation, not
   production, independent, external-use, or adoption evidence.
+- Release commit `pre-rewrite-commit-retired`
+  repeated all ten gates in public
+  [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+  The annotated `v0.2.0` tag and GitHub Release bind the exact wheel, sdist,
+  checksum file, and five synthetic-evidence files from that run.
 
 ## 0.1.0 - 2026-07-26
 

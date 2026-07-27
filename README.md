@@ -104,7 +104,7 @@ source needs no install.
 
 ## Validation status
 
-The version 2 code-bearing commit
+The v0.2.0 release commit
 `pre-rewrite-commit-retired` completed all ten jobs in public
 main-branch
 [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
@@ -117,6 +117,10 @@ the exact wheel outside the checkout, and completed both the version 1 recovery
 smoke and the version 2 context-bound launch smoke. These are
 maintainer-operated synthetic CI results, not external use, independent
 reproduction, production reliability, or real-workload performance evidence.
+The immediately preceding code-bearing commit
+`pre-rewrite-commit-retired` had already completed the same ten
+public jobs in
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
 
 The version 2 branch did not pass on its first public attempt. In
 [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
@@ -127,8 +131,8 @@ no-`PATH` environment. The repair used Linux `/proc/self/exe` only in that test
 helper and also made zombie and unreadable process-state handling fail closed.
 The complete feature-branch
 [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-and the main-branch run above then passed without relaxing the launch
-environment.
+and code-bearing main-branch run pre-rewrite-run-retired then passed without relaxing the
+launch environment; the release-commit run above repeated all gates.
 
 For the historical version 1 implementation, the first complete green public
 [CI run](https://github.com/tiramitree/benchhandoff/actions)
@@ -159,12 +163,23 @@ CI results, not independent reproduction, production reliability, or adoption.
 
 ## GitHub release
 
-[v0.1.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.1.0) is an
-early GitHub-only release under Apache-2.0. Its release assets are the exact
-wheel and sdist built and smoke-tested by the release commit's public CI, plus
-`SHA256SUMS` and the verified synthetic evidence records. No TestPyPI or PyPI
-package has been published. The GitHub release does not create a supported
-production line or external-adoption evidence.
+[v0.2.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.2.0) is a
+GitHub-only early-alpha release under Apache-2.0. Its annotated tag peels to
+release commit `pre-rewrite-commit-retired`. The eight attached
+assets are the exact CI-built wheel, sdist, `SHA256SUMS`, and five verified
+synthetic-evidence files. The wheel is 64,163 bytes with SHA-256
+`d5fc39ec721bb5419fcda83653f40e7860c9565cd0fca8d6cc9078bb71229045`;
+the sdist is 109,078 bytes with SHA-256
+`ceeda39d7e20b5d4985960c3664696a51bd501a7143a15c8d69a61b337a3c9ca`.
+All eight Release downloads were compared byte-for-byte with the CI artifacts,
+and the downloaded wheel repeated the version 1 and version 2 installed-package
+smoke checks.
+
+The earlier
+[v0.1.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.1.0) remains
+available. No TestPyPI or PyPI package has been published. Neither GitHub
+release creates a supported production line, independent reproduction, or
+external-adoption evidence.
 
 On 2026-07-25, the local Windows preflight exercised CPython 3.11.15, 3.12.13,
 3.13.14, and 3.14.6. Each runtime completed the 122-test suite with 119 passes

@@ -4,10 +4,10 @@ This is a manual, fail-closed checklist for BenchHandoff releases. CI builds
 downloadable artifacts, but no package-registry publishing workflow is
 enabled.
 
-Version `v0.1.0` is a GitHub-only early release under Apache-2.0. Its tag,
-GitHub Release, and attached assets bind to one exact public-CI-tested commit.
-Version `v0.2.0` must repeat the same exact-commit gates before it can be
-described as released. There is no TestPyPI or PyPI publication, supported production line, or
+Versions `v0.1.0` and `v0.2.0` are GitHub-only early releases under
+Apache-2.0. Each tag, GitHub Release, and attached asset set binds to one exact
+public-CI-tested commit. Every later release must repeat the same exact-commit
+gates. There is no TestPyPI or PyPI publication, supported production line, or
 external-adoption claim.
 
 ## 1. Resolve release blockers
