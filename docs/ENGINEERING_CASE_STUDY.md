@@ -268,9 +268,9 @@ binds that run's exact distribution and five-file synthetic evidence.
 
 That is maintainer-operated synthetic validation and distribution, not
 production, independent, or external-use evidence. The canonical
-external-evidence ledger therefore reports zero independent reproductions,
-independent users, institutional adopters, and third-party reviews; an opened
-Issue cannot change those counts. The next evidence of a genuinely different
-kind would be independent reproduction or real external use. Until either
-exists, it remains a goal, not a résumé claim. See
+external-evidence ledger, as of 2026-07-24, therefore reports zero independent
+reproductions, independent users, institutional adopters, and third-party
+reviews; an opened Issue cannot change those counts. The next evidence of a
+genuinely different kind would be independent reproduction or real external
+use. Until either exists, it remains a goal, not a résumé claim. See
 [the ledger taxonomy and review rules](EXTERNAL_EVIDENCE.md).

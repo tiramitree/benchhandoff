@@ -108,13 +108,13 @@ The v0.2.0 release commit
 `pre-rewrite-commit-retired` completed all ten jobs in public
 main-branch
 [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-on 2026-07-28 CST. Each of the eight Ubuntu 24.04 and Windows Server 2025 jobs
-across CPython 3.11 through 3.14 ran 186 tests with no failures, errors, or
-skips. The dependent evidence job generated and re-verified the canonical
-five-file synthetic package. The package job built one wheel and one sdist,
-passed the public-privacy, strict Twine, and embedded-license checks, installed
-the exact wheel outside the checkout, and completed both the version 1 recovery
-smoke and the version 2 context-bound launch smoke. These are
+on 2026-07-28 (UTC+00:00). Each of the eight Ubuntu 24.04 and Windows Server
+2025 jobs across CPython 3.11 through 3.14 ran 186 tests with no failures,
+errors, or skips. The dependent evidence job generated and re-verified the
+canonical five-file synthetic package. The package job built one wheel and one
+sdist, passed the public-privacy, strict Twine, and embedded-license checks,
+installed the exact wheel outside the checkout, and completed both the
+version 1 recovery smoke and the version 2 context-bound launch smoke. These are
 maintainer-operated synthetic CI results, not external use, independent
 reproduction, production reliability, or real-workload performance evidence.
 The immediately preceding code-bearing commit
@@ -136,7 +136,7 @@ launch environment; the release-commit run above repeated all gates.
 
 For the historical version 1 implementation, the first complete green public
 [CI run](https://github.com/tiramitree/benchhandoff/actions)
-finished on 2026-07-26 CST at exact source
+finished on 2026-07-26 (UTC+00:00) at exact source
 `pre-rewrite-commit-retired`. All eight Ubuntu 24.04 and
 Windows Server 2025 jobs across CPython 3.11 through 3.14 ran all 158 tests
 with no failures, errors, or skips. The dependent evidence job generated and
