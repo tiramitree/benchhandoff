@@ -160,6 +160,9 @@ jobs:
             test "$start_code" -eq 20
             PATH="$smoke_root/venv/bin:$PATH" "$smoke_root/venv/bin/benchhandoff" resume runs/recovery
             "$smoke_root/venv/bin/benchhandoff" verify runs/recovery
+            cp -R "$GITHUB_WORKSPACE/examples/context_bound" context-bound
+            PATH="$smoke_root/venv/bin:$PATH" "$smoke_root/venv/bin/benchhandoff" start context-bound/suite.toml --run-dir runs/context-bound
+            "$smoke_root/venv/bin/benchhandoff" verify runs/context-bound
           )
 
       - name: Upload the tested distribution bytes

@@ -184,6 +184,7 @@ class AuditRegressionTests(unittest.TestCase):
         task = SimpleNamespace(task_id="one")
         failed_context = SimpleNamespace(
             suite=SimpleNamespace(tasks=(task,)),
+            plan={"schema_version": 1},
             state={
                 "tasks": {
                     "one": {
@@ -208,6 +209,7 @@ class AuditRegressionTests(unittest.TestCase):
 
         running_context = SimpleNamespace(
             suite=SimpleNamespace(tasks=(task,)),
+            plan={"schema_version": 1},
             state={
                 "tasks": {
                     "one": {

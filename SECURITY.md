@@ -1,8 +1,14 @@
 # Security Policy
 
 BenchHandoff is an early alpha, not a sandbox or security boundary. Child
-commands inherit the caller's permissions and environment. Review
+commands inherit the caller's permissions. Version 1 also inherits the caller
+environment; version 2 uses a minimal non-inheriting environment. Review
 [LIMITATIONS.md](LIMITATIONS.md) before running untrusted or sensitive work.
+
+The version 2 Windows Job and cooperative Linux process group are lifecycle
+controls, not hostile-code containment. They do not restrict network,
+filesystem, syscalls, credentials available through the operating-system
+account, or a descendant that creates work outside its assigned scope.
 
 The sibling writer lock serializes cooperating local BenchHandoff mutation
 entrypoints. Do not use it as authorization, hostile-writer protection,
@@ -10,8 +16,9 @@ distributed fencing, or a remote lease.
 
 ## Supported versions
 
-Version 0.1.0 is an early GitHub release, not a supported production line.
-Security reports may identify either `v0.1.0` or an exact `main` commit. There
+Version 0.1.0 is an early GitHub release and 0.2.0 is a candidate, not a
+supported production line. Security reports may identify `v0.1.0`, `v0.2.0`
+when released, or an exact `main` commit. There
 is no response-time, remediation-time, compatibility, or maintenance
 commitment.
 

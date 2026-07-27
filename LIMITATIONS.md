@@ -1,30 +1,41 @@
 # Limitations
 
-BenchHandoff v0.1 is a narrow local run-evidence CLI, not a security sandbox or a
+BenchHandoff v0.2 is a narrow local run-evidence CLI, not a security sandbox or a
 distributed workflow engine.
 
 ## Implemented execution targets
 
-- Child execution targets Windows and Linux only. Those implementations exist,
-  but cross-platform support is not claimed until the public CI matrix has
-  completed successfully.
-- Linux requires a readable `/proc` process identity. macOS and other operating
-  systems do not have a v0.1 start-token implementation and fail closed after
-  launch rather than proceeding without a stable child identity.
-- The checked-in CI matrix is not evidence of an online CI run. Current observed
-  compatibility preflight covers local Windows with CPython 3.11.15, 3.12.13,
-  3.13.14, and 3.14.6. No Linux result is claimed before public CI.
+- Child execution targets Windows and Linux only. Version 0.1 has a complete
+  public cross-platform matrix; version 0.2 remains a candidate until its own
+  exact commit completes that matrix.
+- Linux requires readable `/proc` process identities and group membership.
+  macOS and other operating systems do not have a supported start-token
+  implementation. A new start rejects them before creating the run directory;
+  resume rechecks support before any child launch.
+- A checked-in workflow is not evidence that a new change passed online. Do not
+  transfer the version 0.1 run result to the version 0.2 candidate.
 
 ## Execution isolation
 
-- Child processes inherit the caller's environment and operating-system
+- Version 1 children inherit the caller's environment. Version 2 children do
+  not: they receive only three derived runner variables and Windows
+  `SystemRoot`. Both versions inherit the caller's operating-system
   permissions.
 - There is no network, syscall, GPU, filesystem-write, resource, or secret
   isolation.
 - The runner observes declared inputs and outputs only. A command can create or
-  mutate undeclared files, contact services, or launch descendants.
-- Executables named in `argv[0]` are not hashed automatically. Relevant scripts,
-  configs, and other material dependencies must be declared in `inputs`.
+  mutate undeclared files or contact services.
+- Version 1 manages only the direct child and does not hash `argv[0]`
+  automatically. Relevant scripts, configs, and other material dependencies
+  must be declared in `inputs`.
+- Version 2 hashes the resolved executable and its normalized-path identity.
+  It controls ordinary descendants through a Windows Job Object or cooperative
+  Linux process group, and requires that scope to be empty before output
+  hashing. Windows mechanisms that create work outside the Job and POSIX
+  descendants that call `setsid()`/`setpgid()` remain outside that scope.
+- Version 2 binds and byte-checks an opaque descriptor file. It does not parse
+  or instantiate a VM/container snapshot, verify packages or drivers, or prove
+  that an external object named by the descriptor exists.
 
 Use an external container, VM, account boundary, or sandbox when hostile code is
 in scope.
@@ -46,7 +57,7 @@ in scope.
   existing parent, and the run/quarantine directory must share one filesystem.
 - The run root has an exact topology. An unexpected root entry, including a
   same-directory atomic-write `.tmp` left by a hard process kill, permanently
-  blocks automatic resume and verify. v0.1 never deletes that evidence
+  blocks automatic resume and verify. BenchHandoff never deletes that evidence
   automatically.
 
 ## Recovery and atomicity
@@ -59,6 +70,11 @@ in scope.
   launch and durable child identity, or cannot confirm shutdown after a control
   failure, future resume is refused. Manual evidence review or abandonment is
   required; the runner does not assume that the child is dead.
+- On a Windows version 2 hard runner exit, the anonymous Job's
+  `KILL_ON_JOB_CLOSE` behavior terminates in-Job members. On Linux, a hard
+  runner exit does not terminate the cooperative process group. Resume checks
+  the persisted group and refuses while a member is present or membership is
+  unknown. Neither behavior covers a process that escaped its assigned scope.
 - `state.json`, `events.jsonl`, and `bundle.json` use per-file same-directory
   atomic replacement. They are not one cross-file atomic transaction and do
   not guarantee behavior across sudden power loss, storage-controller failure,
@@ -67,7 +83,7 @@ in scope.
   can reconcile the two explicitly modeled interrupted-write states. This is
   not full event sourcing or universal crash recovery.
 - `events.jsonl` is rewritten in full for each transition. Work is linear in the
-  existing log per transition and quadratic over a very long run. v0.1 bounds
+  existing log per transition and quadratic over a very long run. The protocol bounds
   it to 64 MiB, 100,000 records, and 256 KiB per record.
 - `inspect` decisions are optional content bindings. Plain `resume` remains
   available and can reconcile modeled pending events; policy enforcement
@@ -112,8 +128,11 @@ in scope.
 
 - A SHA-256 match proves byte identity, not scientific validity, semantic
   correctness, provenance ownership, or absence of malicious content.
-- The environment record is descriptive and incomplete. It does not capture
-  packages, drivers, containers, hardware, locale, or environment variables.
+- The top-level environment record is descriptive and incomplete. Version 2
+  additionally proves its non-inheriting variable policy, hashes the one
+  Windows static value it passes, and binds the descriptor/executable/scope
+  identities. It still does not capture packages, drivers, containers,
+  hardware, locale, system libraries, or descriptor semantics.
 - `plan.json` and the transient resume decision record absolute run, suite, and
   suite-file paths, and `bundle.json` records the absolute suite-file path.
   Those values can expose a local username, drive letter, mount point, or other host layout. Treat run
@@ -123,7 +142,7 @@ in scope.
   secrets.
 - Bundles are unsigned local manifests. A party able to rewrite the entire run
   directory can fabricate a self-consistent replacement.
-- v0.1 has no archive export, signature, transparency log, remote attestation,
+- v0.2 has no archive export, signature, transparency log, remote attestation,
   cost accounting, or benchmark comparison engine.
 
 ## Claim boundary

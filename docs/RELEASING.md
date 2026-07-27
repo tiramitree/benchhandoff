@@ -6,7 +6,8 @@ enabled.
 
 Version `v0.1.0` is a GitHub-only early release under Apache-2.0. Its tag,
 GitHub Release, and attached assets bind to one exact public-CI-tested commit.
-There is no TestPyPI or PyPI publication, supported production line, or
+Version `v0.2.0` must repeat the same exact-commit gates before it can be
+described as released. There is no TestPyPI or PyPI publication, supported production line, or
 external-adoption claim.
 
 ## 1. Resolve release blockers
@@ -77,6 +78,7 @@ Also run:
 ```bash
 python tools/verify_license_state.py --require-final
 python tools/verify_external_evidence.py
+python tools/verify_public_privacy.py
 PYTHONPATH=src python -m unittest discover -s tests -v
 python -m compileall -q src tests tools benchmarks examples
 evidence_parent="$(mktemp -d)"

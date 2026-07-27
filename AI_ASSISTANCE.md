@@ -1,6 +1,7 @@
 # AI Assistance Disclosure
 
-This local v0.1 implementation, its tests, and its documentation were drafted
+This implementation, including the v0.2 execution-context and process-scope
+work, its tests, and its documentation, was drafted
 with OpenAI Codex assistance under the user's direction.
 
 The assistant:

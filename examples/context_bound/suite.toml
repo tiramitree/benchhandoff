@@ -1,0 +1,14 @@
+version = 2
+name = "context-bound-copy"
+
+[context]
+path = "context.json"
+media_type = "application/vnd.benchhandoff.synthetic-context.v1+json"
+digest = "sha256:8f8a9e4bbf1d379185c1588474f10c02171f2b1d07f05634eb8b338df3236ddd"
+size = 80
+
+[[task]]
+id = "copy-upper"
+argv = ["python", "copy_upper.py", "input.txt", "output.txt"]
+inputs = ["context.json", "copy_upper.py", "input.txt"]
+outputs = ["output.txt"]

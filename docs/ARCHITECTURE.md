@@ -9,6 +9,8 @@ suite.toml + declared seed files
         - regular files
         - SHA-256 identities
         - outputs absent
+        - v2 descriptor/executable
+          and launch-policy identity
                |
                v
            plan.json
@@ -17,12 +19,14 @@ suite.toml + declared seed files
    task_started + launch guard
                |
                v
-       subprocess (shell=False)
+       process launch (shell=False)
+       v1: direct child
+       v2: Job/process group
           |               |
        non-zero         zero
           |               |
           v               v
-     failed state    verify inputs/outputs
+     failed state    v2 scope-empty gate
      no bundle        + completed state
           |               |
           v               |
@@ -69,6 +73,32 @@ Before `Popen`, the attempt is durably marked with a child launch guard. After a
 stable Windows or Linux process-start token is captured, state is updated with
 the PID/token and the guard is disarmed. An unresolved guard is intentionally
 not auto-recovered because the runner cannot prove whether the child ran.
+
+## Version 2 launch and quiescence
+
+Version 2 preflight hashes a declared context descriptor file and resolves each
+portable executable name to one exact ordinary file. The plan binds the
+executable bytes, a hash of its normalized resolved path, a non-inheriting
+environment policy, and the platform process-scope policy. The same context is
+recomputed before launch, after leader exit, during read-only inspection, and
+before any resume reconciliation or transition.
+
+Windows `ProcessScope` creates the leader suspended, assigns it to a
+kill-on-close Job Object, then resumes the only primary thread. Linux starts
+the leader in a new session/process group. An attempt records that scope as
+active alongside the leader PID/token.
+
+After the leader reaches a terminal status, the runner checks the complete
+scope before re-reading any declared input or output. A nonempty scope is
+terminated and the attempt fails even when the leader returned zero. Only
+`empty_confirmed=true` permits a version 2 terminal attempt or output hash.
+
+On resume after a runner exit, Windows relies on the anonymous Job's
+kill-on-close contract after rechecking the leader identity. Linux additionally
+enumerates the persisted process group and refuses an active or unknown group.
+The Linux group can be escaped by a cooperating descendant, so this is a
+quiescence gate rather than security containment. The complete boundary is in
+[`EXECUTION_CONTEXT_AND_PROCESS_SCOPE.md`](EXECUTION_CONTEXT_AND_PROCESS_SCOPE.md).
 
 ## Cooperative writer serialization and orphan recovery
 
@@ -130,7 +160,7 @@ binding, not authentication, a signature, or a lease. The separate writer lock
 serializes cooperating mutation entrypoints across both digest checks and the
 first transition, closing their local check-to-mutation race. Direct filesystem
 mutation, lock removal, remote coordination, and hostile writers remain outside
-the v0.1 threat model.
+the threat model.
 
 ## Exact evidence topology
 

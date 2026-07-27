@@ -1,4 +1,4 @@
-# Evidence Format v1
+# Evidence Format v1 and v2
 
 All JSON files use strict UTF-8, sorted object keys, compact separators, finite
 JSON numbers, and a trailing newline. Hashes are lowercase SHA-256 hex digests;
@@ -19,6 +19,19 @@ The immutable plan binds:
 An input produced by an earlier task is not a seed. Its expected identity comes
 from that producer's completed state.
 
+Schema version 2 additionally requires:
+
+- `suite.context`, containing the portable descriptor path, media type,
+  `sha256:` digest, and byte size;
+- that descriptor's exact identity in `seed_inputs`; and
+- `execution_context`, which binds the descriptor, every task executable's
+  basename/content/path-hash identity, the non-inheriting environment policy,
+  and the Windows Job or cooperative Linux process-group policy.
+
+The executable path itself is not stored in that nested record; only its
+normalized-path SHA-256 and UTF-8 length are. Existing absolute suite/run paths
+elsewhere in the plan remain unchanged and potentially identifying.
+
 ## `state.json`
 
 Run status is `running`, `failed`, or `completed`. Task status is `pending`,
@@ -37,6 +50,21 @@ Each attempt records:
   no recoverable return code;
 - verified output identities on success; and
 - quarantined partial-output identities after a later resume recovers it.
+
+Each version 2 attempt also records the task execution-context SHA-256 and one
+strict `process_scope` object. The scope contains:
+
+- `mode`: `windows-job` or `posix-cooperative-process-group`;
+- the matching `cooperative` boolean;
+- `scope_id`, equal to the leader PID once launch is identified;
+- `empty_confirmed`; and
+- `closure`: one of the bounded launch, active, natural-empty, terminated, or
+  recovered-empty states.
+
+A running identified attempt must have an active nonempty scope record. A
+terminal attempt with a child must have `empty_confirmed=true`; a safe failure
+before an identified child must record that no scope was created or that a
+partially created launch was cleaned.
 
 The state binds the plan hash and the event-log hash, byte size, and record
 count. It also carries at most one pending event intent. State is published with
@@ -64,6 +92,10 @@ suite identity, all current run-evidence file identities, and a next-task view
 when work remains. That view contains the task status and next attempt number,
 verified input identities, unverified output presence or identity, and the
 presence or identity of each deterministic quarantine candidate.
+
+For version 2, the next-task view also carries the freshly recomputed execution
+context. Context drift therefore changes or blocks the decision before resume
+mutation.
 
 `decision_sha256` is the SHA-256 of the same canonical object with that one
 self-referential field omitted. The decision is emitted to stdout and is not
@@ -109,6 +141,10 @@ The one-time bundle contains:
 - every completed task output identity; and
 - every evidence-artifact identity for `plan.json`, `state.json`,
   `events.jsonl`, `logs/**`, and `quarantine/**`.
+
+Version 2 also copies the immutable plan execution-context object into the
+bundle and requires exact equality during verification. Version 1 bundles
+retain their original exact key set and remain readable.
 
 `verify` requires the recorded artifact file set to match exactly and separately
 requires the run-root topology to contain only the three core files, the two

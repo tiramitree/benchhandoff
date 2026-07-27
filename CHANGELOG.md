@@ -3,6 +3,35 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
+## 0.2.0 - Unreleased
+
+### Added
+
+- Strict suite/evidence schema version 2 while retaining version 1 read and
+  execution compatibility.
+- Byte-verified execution-context descriptor files that must also be declared
+  seed inputs.
+- Resolved executable content identity plus a hashed normalized-path identity,
+  with absolute `argv[0]` rejected for version 2.
+- A non-inheriting version 2 launch environment with only derived runner
+  variables and hashed-and-bound Windows `SystemRoot`.
+- Windows Job Object lifecycle control using suspended creation, assignment
+  before resume, kill-on-close, active-member queries, and empty-scope gates.
+- Cooperative Linux session/process-group lifecycle control with TERM/KILL,
+  bounded empty confirmation, and resume-time residual-group refusal.
+- Real child-to-grandchild tests for explicit cleanup, leader exit, state-write
+  failure, and hard runner exit on both platform branches.
+- A public synthetic version 2 example and a protocol/claim-boundary note.
+
+### Boundaries
+
+- The descriptor is opaque and is not a VM/container snapshot implementation,
+  package or driver inventory, or remote attestation.
+- The Windows Job and Linux process group are lifecycle controls, not a
+  sandbox. Linux descendants can deliberately leave the group.
+- These maintainer-authored synthetic tests are not production reliability,
+  external use, independent reproduction, or third-party review.
+
 ## 0.1.0 - 2026-07-26
 
 ### Added

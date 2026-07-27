@@ -18,17 +18,40 @@ from benchhandoff.storage import (
 )
 
 _TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
-_ROOT_KEYS = {"version", "name", "task"}
+_DESCRIPTOR_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_ROOT_KEYS_V1 = {"version", "name", "task"}
+_ROOT_KEYS_V2 = {"version", "name", "context", "task"}
+_CONTEXT_KEYS = {"path", "media_type", "digest", "size"}
 _TASK_KEYS = {"id", "argv", "inputs", "outputs"}
 MAX_SUITE_BYTES = 256 * 1024
 MAX_SUITE_TASKS = 64
 MAX_SUITE_NAME_UTF8_BYTES = 256
+MAX_CONTEXT_MEDIA_TYPE_UTF8_BYTES = 512
+MAX_CONTEXT_SIZE = (1 << 63) - 1
 MAX_SUITE_PATH_REFERENCES = 512
 MAX_TASK_ARGUMENTS = 128
 MAX_TASK_ARGUMENT_UTF8_BYTES = 4096
 MAX_TASK_ARGUMENTS_UTF8_BYTES = 64 * 1024
 MAX_TASK_INPUTS = 64
 MAX_TASK_OUTPUTS = 64
+
+
+@dataclass(frozen=True)
+class ContextDescriptor:
+    """One external execution-context descriptor bound by digest and size."""
+
+    path: str
+    media_type: str
+    digest: str
+    size: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "path": self.path,
+            "media_type": self.media_type,
+            "digest": self.digest,
+            "size": self.size,
+        }
 
 
 @dataclass(frozen=True)
@@ -60,13 +83,17 @@ class SuiteSpec:
     tasks: tuple[TaskSpec, ...]
     seed_inputs: tuple[str, ...]
     identity: dict[str, Any]
+    context: ContextDescriptor | None
 
     def normalized(self) -> dict[str, Any]:
-        return {
+        value = {
             "version": self.version,
             "name": self.name,
             "tasks": [task.as_dict() for task in self.tasks],
         }
+        if self.context is not None:
+            value["context"] = self.context.as_dict()
+        return value
 
 
 def _only_keys(value: dict[str, Any], allowed: set[str], *, label: str) -> None:
@@ -114,16 +141,70 @@ def load_suite(path: Path | str) -> SuiteSpec:
         raise ConfigurationError(f"suite.toml is not valid UTF-8 TOML: {exc}") from exc
     if not isinstance(parsed, dict):
         raise ConfigurationError("suite.toml must contain a table")
-    _only_keys(parsed, _ROOT_KEYS, label="suite.toml")
-
-    if parsed.get("version") != 1:
-        raise ConfigurationError("suite.toml version must be exactly 1")
+    version = parsed.get("version")
+    if not isinstance(version, int) or isinstance(version, bool) or version not in {1, 2}:
+        raise ConfigurationError("suite.toml version must be exactly 1 or 2")
+    _only_keys(
+        parsed,
+        _ROOT_KEYS_V1 if version == 1 else _ROOT_KEYS_V2,
+        label="suite.toml",
+    )
     name = parsed.get("name")
     if not isinstance(name, str) or not name.strip():
         raise ConfigurationError("suite.toml name must be a non-empty string")
     if len(name.encode("utf-8")) > MAX_SUITE_NAME_UTF8_BYTES:
         raise ConfigurationError(
             f"suite.toml name exceeds {MAX_SUITE_NAME_UTF8_BYTES} UTF-8 bytes"
+        )
+
+    context: ContextDescriptor | None = None
+    if version == 2:
+        raw_context = parsed.get("context")
+        if not isinstance(raw_context, dict):
+            raise ConfigurationError("suite.toml v2 must define one [context] table")
+        _only_keys(raw_context, _CONTEXT_KEYS, label="suite.toml context")
+        raw_context_path = raw_context.get("path")
+        if not isinstance(raw_context_path, str):
+            raise ConfigurationError(
+                "suite.toml context.path must be a portable relative file"
+            )
+        try:
+            context_path = normalize_relative_file(
+                raw_context_path,
+                label="suite.toml context.path",
+            )
+        except BoundaryError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        media_type = raw_context.get("media_type")
+        if not isinstance(media_type, str) or not media_type:
+            raise ConfigurationError("suite.toml context.media_type must be non-empty text")
+        if "\x00" in media_type:
+            raise ConfigurationError("suite.toml context.media_type contains a NUL byte")
+        if len(media_type.encode("utf-8")) > MAX_CONTEXT_MEDIA_TYPE_UTF8_BYTES:
+            raise ConfigurationError(
+                "suite.toml context.media_type exceeds "
+                f"{MAX_CONTEXT_MEDIA_TYPE_UTF8_BYTES} UTF-8 bytes"
+            )
+        digest = raw_context.get("digest")
+        if not isinstance(digest, str) or not _DESCRIPTOR_DIGEST.fullmatch(digest):
+            raise ConfigurationError(
+                "suite.toml context.digest must be lowercase sha256:<64 hex>"
+            )
+        size = raw_context.get("size")
+        if (
+            not isinstance(size, int)
+            or isinstance(size, bool)
+            or size < 0
+            or size > MAX_CONTEXT_SIZE
+        ):
+            raise ConfigurationError(
+                f"suite.toml context.size must be an integer from 0 to {MAX_CONTEXT_SIZE}"
+            )
+        context = ContextDescriptor(
+            path=context_path,
+            media_type=media_type,
+            digest=digest,
+            size=size,
         )
 
     raw_tasks = parsed.get("task")
@@ -171,6 +252,17 @@ def load_suite(path: Path | str) -> SuiteSpec:
         argv = _string_list(raw_task.get("argv"), label=f"{label}.argv")
         if not argv or not argv[0]:
             raise ConfigurationError(f"{label}.argv must contain a non-empty executable")
+        if version == 2:
+            try:
+                normalize_relative_file(
+                    argv[0],
+                    label=f"{label}.argv executable",
+                )
+            except BoundaryError as exc:
+                raise ConfigurationError(
+                    "suite.toml v2 executable must be a portable bare name "
+                    "or suite-relative path"
+                ) from exc
         if len(argv) > MAX_TASK_ARGUMENTS:
             raise ConfigurationError(
                 f"{label}.argv exceeds the {MAX_TASK_ARGUMENTS}-argument limit"
@@ -254,13 +346,19 @@ def load_suite(path: Path | str) -> SuiteSpec:
 
         tasks.append(TaskSpec(task_id, argv, inputs, outputs))
 
+    if context is not None and context.path not in observed_seed_inputs:
+        raise ConfigurationError(
+            "suite.toml context.path must be declared as a seed task input"
+        )
+
     resolved_path = suite_path.resolve(strict=True)
     return SuiteSpec(
         path=resolved_path,
         root=resolved_path.parent,
         name=name.strip(),
-        version=1,
+        version=version,
         tasks=tuple(tasks),
         seed_inputs=tuple(seed_order),
         identity=file_identity(resolved_path, label="suite.toml"),
+        context=context,
     )

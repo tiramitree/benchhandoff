@@ -7,6 +7,7 @@ import json
 import os
 import re
 import platform
+import shutil
 import stat
 import subprocess
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from benchhandoff.model import (
     MAX_SUITE_NAME_UTF8_BYTES,
     MAX_SUITE_PATH_REFERENCES,
     MAX_SUITE_TASKS,
+    MAX_CONTEXT_MEDIA_TYPE_UTF8_BYTES,
+    MAX_CONTEXT_SIZE,
     MAX_TASK_ARGUMENTS,
     MAX_TASK_ARGUMENT_UTF8_BYTES,
     MAX_TASK_ARGUMENTS_UTF8_BYTES,
@@ -28,7 +31,16 @@ from benchhandoff.model import (
     TaskSpec,
     load_suite,
 )
-from benchhandoff.processes import process_liveness, process_start_token, stop_process
+from benchhandoff.processes import (
+    ProcessScope,
+    ProcessScopeLaunchError,
+    process_liveness,
+    process_scope_liveness,
+    process_scope_policy,
+    process_start_token,
+    require_process_identity_support,
+    stop_process,
+)
 from benchhandoff.storage import (
     atomic_write_bytes,
     atomic_write_json,
@@ -54,7 +66,7 @@ from benchhandoff.storage import (
 )
 from benchhandoff.writer_lock import WriterLock
 
-SCHEMA_VERSION = 1
+SUPPORTED_SCHEMA_VERSIONS = {1, 2}
 PLAN_FILE = "plan.json"
 STATE_FILE = "state.json"
 BUNDLE_FILE = "bundle.json"
@@ -163,7 +175,10 @@ def _validate_event_record(
     }
     optional = {"task_id"}
     _exact_keys(event, required, optional=optional, label=label)
-    if not _non_bool_int(event["schema_version"]) or event["schema_version"] != SCHEMA_VERSION:
+    if (
+        not _non_bool_int(event["schema_version"])
+        or event["schema_version"] != plan["schema_version"]
+    ):
         raise EvidenceError(f"{label} has an invalid schema version")
     if event["run_id"] != plan["run_id"]:
         raise EvidenceError(f"{label} has a mismatched run_id")
@@ -330,7 +345,7 @@ def _commit_transition(
     if current["count"] >= MAX_EVENT_COUNT:
         raise EvidenceError("events.jsonl has reached the event-count limit")
     event: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": context.plan["schema_version"],
         "time": utc_now(),
         "type": event_type,
         "run_id": context.plan["run_id"],
@@ -407,7 +422,176 @@ def _identity_or_raise(
         )
 
 
-def _preflight_suite(suite: SuiteSpec) -> dict[str, dict[str, Any]]:
+def _resolved_executable(
+    suite: SuiteSpec,
+    task: TaskSpec,
+) -> tuple[Path, dict[str, Any]]:
+    """Resolve and identify the exact executable without publishing its path."""
+
+    raw = task.argv[0]
+    raw_path = Path(raw)
+    if raw_path.is_absolute():
+        candidate = raw_path
+    elif raw_path.parent != Path(".") or "/" in raw or "\\" in raw:
+        candidate = suite.root / raw_path
+    else:
+        located = shutil.which(raw)
+        if located is None:
+            raise BoundaryError(
+                f"task {task.task_id!r} executable could not be resolved"
+            )
+        candidate = Path(located)
+    try:
+        resolved = candidate.resolve(strict=True)
+        identity = file_identity(
+            resolved,
+            label=f"task {task.task_id!r} executable",
+        )
+    except (OSError, BenchHandoffError) as exc:
+        if isinstance(exc, BenchHandoffError):
+            raise
+        raise BoundaryError(
+            f"task {task.task_id!r} executable could not be identified: {exc}"
+        ) from exc
+    basename = resolved.name
+    normalized_path = os.path.normcase(str(resolved))
+    try:
+        encoded_basename = basename.encode("utf-8")
+        encoded_path = normalized_path.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise BoundaryError(
+            f"task {task.task_id!r} executable path is not valid UTF-8 text"
+        ) from exc
+    if not basename or len(encoded_basename) > 1024:
+        raise BoundaryError(f"task {task.task_id!r} executable basename is invalid")
+    return resolved, {
+        "basename": basename,
+        "path_sha256": hashlib.sha256(encoded_path).hexdigest(),
+        "path_utf8_size": len(encoded_path),
+        **identity,
+    }
+
+
+def _launch_environment() -> tuple[dict[str, str], dict[str, Any]]:
+    """Return the frozen v2 base environment and its non-secret identity."""
+
+    values: dict[str, str] = {}
+    if os.name == "nt":
+        system_root = os.environ.get("SystemRoot")
+        if not system_root or "\x00" in system_root:
+            raise BoundaryError(
+                "suite version 2 requires a valid Windows SystemRoot"
+            )
+        values["SystemRoot"] = system_root
+    identities: dict[str, dict[str, str | int]] = {}
+    for name, value in sorted(values.items()):
+        try:
+            encoded_value = value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise BoundaryError(
+                f"version 2 launch environment {name} is not valid UTF-8 text"
+            ) from exc
+        identities[name] = {
+            "sha256": hashlib.sha256(encoded_value).hexdigest(),
+            "utf8_size": len(encoded_value),
+        }
+    return values, {
+        "inherit_parent": False,
+        "static_variables": identities,
+        "runner_variables": [
+            "BENCHHANDOFF_ATTEMPT",
+            "BENCHHANDOFF_RUN_ID",
+            "BENCHHANDOFF_TASK_ID",
+        ],
+    }
+
+
+def _task_execution_context(
+    suite: SuiteSpec,
+    task: TaskSpec,
+) -> tuple[Path, dict[str, str], dict[str, Any]]:
+    if suite.version != 2 or suite.context is None:
+        raise EvidenceError("task execution context requires suite version 2")
+    descriptor_identity = member_identity(
+        suite.root,
+        suite.context.path,
+        label="execution-context descriptor",
+    )
+    expected_descriptor_identity = {
+        "sha256": suite.context.digest.removeprefix("sha256:"),
+        "size": suite.context.size,
+    }
+    _identity_or_raise(
+        descriptor_identity,
+        expected_descriptor_identity,
+        label="execution-context descriptor",
+    )
+    executable, identity = _resolved_executable(suite, task)
+    launch_environment, environment_identity = _launch_environment()
+    scope_policy = process_scope_policy()
+    body = {
+        "descriptor": suite.context.as_dict(),
+        "environment": environment_identity,
+        "executable": identity,
+        "process_scope": scope_policy,
+    }
+    return executable, launch_environment, {
+        **body,
+        "context_sha256": hashlib.sha256(canonical_json_bytes(body)).hexdigest(),
+    }
+
+
+def _suite_execution_context(suite: SuiteSpec) -> dict[str, Any] | None:
+    if suite.version == 1:
+        return None
+    if suite.context is None:
+        raise EvidenceError("suite version 2 lacks an execution-context descriptor")
+    tasks: dict[str, dict[str, Any]] = {}
+    for task in suite.tasks:
+        _, _, tasks[task.task_id] = _task_execution_context(suite, task)
+    body = {
+        "descriptor": suite.context.as_dict(),
+        "tasks": tasks,
+    }
+    return {
+        **body,
+        "context_sha256": hashlib.sha256(canonical_json_bytes(body)).hexdigest(),
+    }
+
+
+def _bound_task_execution_context(
+    context: _RunContext,
+    task: TaskSpec,
+    *,
+    phase: str = "before launch",
+) -> tuple[Path | None, dict[str, str] | None, dict[str, Any] | None]:
+    if context.plan["schema_version"] == 1:
+        return None, None, None
+    executable, launch_environment, current = _task_execution_context(
+        context.suite,
+        task,
+    )
+    expected = context.plan["execution_context"]["tasks"][task.task_id]
+    if current != expected:
+        raise EvidenceError(
+            f"task {task.task_id!r} execution context drifted {phase}"
+        )
+    return executable, launch_environment, current
+
+
+def _verify_next_execution_context(context: _RunContext) -> None:
+    if context.plan["schema_version"] == 1:
+        return
+    for task in context.suite.tasks:
+        if context.state["tasks"][task.task_id]["status"] != "completed":
+            _bound_task_execution_context(context, task)
+            return
+
+
+def _preflight_suite(
+    suite: SuiteSpec,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
+    require_process_identity_support()
     seed_inputs: dict[str, dict[str, Any]] = {}
     for relative in suite.seed_inputs:
         seed_inputs[relative] = member_identity(
@@ -427,16 +611,17 @@ def _preflight_suite(suite: SuiteSpec) -> dict[str, dict[str, Any]]:
                 relative,
                 label=f"output {relative!r}",
             )
-    return seed_inputs
+    return seed_inputs, _suite_execution_context(suite)
 
 
 def _initial_plan(
     suite: SuiteSpec,
     run_root: Path,
     seed_inputs: dict[str, dict[str, Any]],
+    execution_context: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    return {
-        "schema_version": SCHEMA_VERSION,
+    plan = {
+        "schema_version": suite.version,
         "kind": "benchhandoff-plan",
         "run_id": uuid4().hex,
         "created_at": utc_now(),
@@ -454,6 +639,9 @@ def _initial_plan(
             "platform": platform.system() or "Unknown",
         },
     }
+    if execution_context is not None:
+        plan["execution_context"] = execution_context
+    return plan
 
 
 def _initial_state(
@@ -463,7 +651,7 @@ def _initial_state(
 ) -> dict[str, Any]:
     created_at = utc_now()
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": plan["schema_version"],
         "kind": "benchhandoff-state",
         "run_id": plan["run_id"],
         "plan_sha256": plan_identity["sha256"],
@@ -626,9 +814,193 @@ def _validate_plan_task(task: Any, *, index: int) -> dict[str, Any]:
     return task
 
 
+def _validate_context_descriptor(value: Any, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(value, {"path", "media_type", "digest", "size"}, label=label)
+    _validate_portable_path(value["path"], label=f"{label}.path")
+    media_type = _validate_text(value["media_type"], label=f"{label}.media_type")
+    if len(media_type.encode("utf-8")) > MAX_CONTEXT_MEDIA_TYPE_UTF8_BYTES:
+        raise EvidenceError(f"{label}.media_type is too long")
+    digest = value["digest"]
+    if (
+        not isinstance(digest, str)
+        or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+    ):
+        raise EvidenceError(f"{label}.digest is invalid")
+    size = value["size"]
+    if not _non_bool_int(size) or size < 0 or size > MAX_CONTEXT_SIZE:
+        raise EvidenceError(f"{label}.size is invalid")
+    return value
+
+
+def _validate_executable_identity(value: Any, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(
+        value,
+        {"basename", "path_sha256", "path_utf8_size", "sha256", "size"},
+        label=label,
+    )
+    basename = _validate_text(value["basename"], label=f"{label}.basename")
+    if (
+        "/" in basename
+        or "\\" in basename
+        or len(basename.encode("utf-8")) > 1024
+    ):
+        raise EvidenceError(f"{label}.basename is invalid")
+    _validate_identity(
+        {"sha256": value["sha256"], "size": value["size"]},
+        label=label,
+    )
+    if (
+        not isinstance(value["path_sha256"], str)
+        or _SHA256_PATTERN.fullmatch(value["path_sha256"]) is None
+    ):
+        raise EvidenceError(f"{label}.path_sha256 is invalid")
+    if (
+        not _non_bool_int(value["path_utf8_size"])
+        or value["path_utf8_size"] < 1
+        or value["path_utf8_size"] > 32768
+    ):
+        raise EvidenceError(f"{label}.path_utf8_size is invalid")
+    return value
+
+
+def _validate_launch_environment(value: Any, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(
+        value,
+        {"inherit_parent", "static_variables", "runner_variables"},
+        label=label,
+    )
+    if value["inherit_parent"] is not False:
+        raise EvidenceError(f"{label}.inherit_parent must be false")
+    static_variables = value["static_variables"]
+    if (
+        not isinstance(static_variables, dict)
+        or set(static_variables) not in (set(), {"SystemRoot"})
+    ):
+        raise EvidenceError(f"{label}.static_variables is invalid")
+    for name, identity in static_variables.items():
+        variable_label = f"{label}.static_variables[{name!r}]"
+        if not isinstance(identity, dict):
+            raise EvidenceError(f"{variable_label} must be an object")
+        _exact_keys(identity, {"sha256", "utf8_size"}, label=variable_label)
+        if (
+            not isinstance(identity["sha256"], str)
+            or _SHA256_PATTERN.fullmatch(identity["sha256"]) is None
+        ):
+            raise EvidenceError(f"{variable_label}.sha256 is invalid")
+        if (
+            not _non_bool_int(identity["utf8_size"])
+            or identity["utf8_size"] < 1
+            or identity["utf8_size"] > 32768
+        ):
+            raise EvidenceError(f"{variable_label}.utf8_size is invalid")
+    expected_runner = [
+        "BENCHHANDOFF_ATTEMPT",
+        "BENCHHANDOFF_RUN_ID",
+        "BENCHHANDOFF_TASK_ID",
+    ]
+    if value["runner_variables"] != expected_runner:
+        raise EvidenceError(f"{label}.runner_variables is invalid")
+    return value
+
+
+def _validate_process_scope_policy(value: Any, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(value, {"mode", "cooperative"}, label=label)
+    mode = value["mode"]
+    cooperative = value["cooperative"]
+    valid = (
+        mode == "windows-job"
+        and cooperative is False
+    ) or (
+        mode == "posix-cooperative-process-group"
+        and cooperative is True
+    )
+    if not valid:
+        raise EvidenceError(f"{label} is invalid")
+    return value
+
+
+def _validate_execution_context(
+    value: Any,
+    *,
+    task_ids: set[str],
+    label: str,
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(value, {"descriptor", "tasks", "context_sha256"}, label=label)
+    descriptor = _validate_context_descriptor(
+        value["descriptor"],
+        label=f"{label}.descriptor",
+    )
+    tasks = value["tasks"]
+    if not isinstance(tasks, dict) or set(tasks) != task_ids:
+        raise EvidenceError(f"{label}.tasks must match the plan task ids")
+    for task_id, record in tasks.items():
+        task_label = f"{label}.tasks[{task_id!r}]"
+        if not isinstance(record, dict):
+            raise EvidenceError(f"{task_label} must be an object")
+        _exact_keys(
+            record,
+            {
+                "descriptor",
+                "environment",
+                "executable",
+                "process_scope",
+                "context_sha256",
+            },
+            label=task_label,
+        )
+        if record["descriptor"] != descriptor:
+            raise EvidenceError(f"{task_label}.descriptor does not match")
+        _validate_executable_identity(
+            record["executable"],
+            label=f"{task_label}.executable",
+        )
+        _validate_launch_environment(
+            record["environment"],
+            label=f"{task_label}.environment",
+        )
+        _validate_process_scope_policy(
+            record["process_scope"],
+            label=f"{task_label}.process_scope",
+        )
+        expected_task_sha256 = hashlib.sha256(
+            canonical_json_bytes(
+                {
+                    "descriptor": record["descriptor"],
+                    "environment": record["environment"],
+                    "executable": record["executable"],
+                    "process_scope": record["process_scope"],
+                }
+            )
+        ).hexdigest()
+        if record["context_sha256"] != expected_task_sha256:
+            raise EvidenceError(f"{task_label}.context_sha256 does not match")
+    expected_sha256 = hashlib.sha256(
+        canonical_json_bytes({"descriptor": descriptor, "tasks": tasks})
+    ).hexdigest()
+    if value["context_sha256"] != expected_sha256:
+        raise EvidenceError(f"{label}.context_sha256 does not match")
+    return value
+
+
 def _validate_plan_shape(plan: Any) -> None:
     if not isinstance(plan, dict):
         raise EvidenceError("plan.json must contain an object")
+    schema_version = plan.get("schema_version")
+    if (
+        not _non_bool_int(schema_version)
+        or schema_version not in SUPPORTED_SCHEMA_VERSIONS
+    ):
+        raise EvidenceError("plan.json has an unsupported schema or kind")
     required = {
         "schema_version",
         "kind",
@@ -641,11 +1013,11 @@ def _validate_plan_shape(plan: Any) -> None:
         "seed_inputs",
         "environment",
     }
+    if schema_version == 2:
+        required.add("execution_context")
     _exact_keys(plan, required, label="plan.json")
     if (
-        not _non_bool_int(plan["schema_version"])
-        or plan["schema_version"] != SCHEMA_VERSION
-        or plan["kind"] != "benchhandoff-plan"
+        plan["kind"] != "benchhandoff-plan"
     ):
         raise EvidenceError("plan.json has an unsupported schema or kind")
     run_id = _validate_text(plan["run_id"], label="plan.json run_id")
@@ -659,9 +1031,20 @@ def _validate_plan_shape(plan: Any) -> None:
     suite = plan["suite"]
     if not isinstance(suite, dict):
         raise EvidenceError("plan.json suite must be an object")
-    _exact_keys(suite, {"version", "name", "tasks"}, label="plan.json suite")
-    if not _non_bool_int(suite["version"]) or suite["version"] != 1:
+    suite_keys = {"version", "name", "tasks"}
+    if schema_version == 2:
+        suite_keys.add("context")
+    _exact_keys(suite, suite_keys, label="plan.json suite")
+    if (
+        not _non_bool_int(suite["version"])
+        or suite["version"] != schema_version
+    ):
         raise EvidenceError("plan.json suite version is invalid")
+    if schema_version == 2:
+        _validate_context_descriptor(
+            suite["context"],
+            label="plan.json suite.context",
+        )
     suite_name = _validate_text(suite["name"], label="plan.json suite name")
     if len(suite_name.encode("utf-8")) > MAX_SUITE_NAME_UTF8_BYTES:
         raise EvidenceError(
@@ -677,6 +1060,11 @@ def _validate_plan_shape(plan: Any) -> None:
     path_references = 0
     for index, task in enumerate(suite["tasks"]):
         validated = _validate_plan_task(task, index=index)
+        if schema_version == 2:
+            _validate_portable_path(
+                validated["argv"][0],
+                label=f"plan.json suite task[{index}].argv executable",
+            )
         path_references += len(validated["inputs"]) + len(validated["outputs"])
         if path_references > MAX_SUITE_PATH_REFERENCES:
             raise EvidenceError(
@@ -686,7 +1074,10 @@ def _validate_plan_shape(plan: Any) -> None:
         if validated["id"] in task_ids:
             raise EvidenceError("plan.json suite contains duplicate task ids")
         task_ids.add(validated["id"])
-    _validate_identity_map(plan["seed_inputs"], label="plan.json seed_inputs")
+    seed_inputs = _validate_identity_map(
+        plan["seed_inputs"],
+        label="plan.json seed_inputs",
+    )
 
     environment = plan["environment"]
     if not isinstance(environment, dict):
@@ -698,6 +1089,33 @@ def _validate_plan_shape(plan: Any) -> None:
     )
     for field in environment:
         _validate_text(environment[field], label=f"plan.json environment.{field}")
+    if schema_version == 2:
+        execution_context = _validate_execution_context(
+            plan["execution_context"],
+            task_ids=task_ids,
+            label="plan.json execution_context",
+        )
+        if execution_context["descriptor"] != suite["context"]:
+            raise EvidenceError(
+                "plan.json execution_context descriptor does not match suite context"
+            )
+        descriptor = suite["context"]
+        descriptor_identity = seed_inputs.get(descriptor["path"])
+        expected_descriptor_identity = {
+            "sha256": descriptor["digest"].removeprefix("sha256:"),
+            "size": descriptor["size"],
+        }
+        if descriptor_identity != expected_descriptor_identity:
+            raise EvidenceError(
+                "plan.json context descriptor identity does not match seed_inputs"
+            )
+        if not any(
+            descriptor["path"] in task["inputs"]
+            for task in suite["tasks"]
+        ):
+            raise EvidenceError(
+                "plan.json context descriptor is not a declared seed task input"
+            )
 
 
 def _validate_quarantine_records(
@@ -734,11 +1152,98 @@ def _validate_quarantine_records(
     return value
 
 
+def _validate_attempt_process_scope(
+    value: Any,
+    *,
+    label: str,
+    expected_policy: dict[str, Any],
+    status: str,
+    child_pid: int | None,
+    child_launch_guard: bool,
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(
+        value,
+        {
+            "mode",
+            "cooperative",
+            "scope_id",
+            "empty_confirmed",
+            "closure",
+        },
+        label=label,
+    )
+    policy = _validate_process_scope_policy(
+        {
+            "mode": value["mode"],
+            "cooperative": value["cooperative"],
+        },
+        label=label,
+    )
+    if policy != expected_policy:
+        raise EvidenceError(f"{label} does not match plan.json")
+    scope_id = value["scope_id"]
+    if scope_id is not None and (
+        not _non_bool_int(scope_id) or scope_id <= 0
+    ):
+        raise EvidenceError(f"{label}.scope_id is invalid")
+    if not isinstance(value["empty_confirmed"], bool):
+        raise EvidenceError(f"{label}.empty_confirmed must be a boolean")
+    closure = value["closure"]
+    allowed_closures = {
+        "pending-launch",
+        "active",
+        "not-created",
+        "launch-cleaned",
+        "natural-empty",
+        "terminated",
+        "recovered-empty",
+    }
+    if not isinstance(closure, str) or closure not in allowed_closures:
+        raise EvidenceError(f"{label}.closure is invalid")
+
+    if child_launch_guard:
+        if (
+            scope_id is not None
+            or value["empty_confirmed"]
+            or closure != "pending-launch"
+        ):
+            raise EvidenceError(
+                f"{label} unresolved launch fields are inconsistent"
+            )
+        return value
+
+    if child_pid is None:
+        if (
+            status != "failed"
+            or scope_id is not None
+            or value["empty_confirmed"] is not True
+            or closure not in {"not-created", "launch-cleaned"}
+        ):
+            raise EvidenceError(f"{label} absent scope fields are inconsistent")
+        return value
+
+    if scope_id != child_pid:
+        raise EvidenceError(f"{label}.scope_id must equal the leader child_pid")
+    if status == "running":
+        if value["empty_confirmed"] or closure != "active":
+            raise EvidenceError(f"{label} running scope fields are inconsistent")
+    elif (
+        value["empty_confirmed"] is not True
+        or closure
+        not in {"natural-empty", "terminated", "recovered-empty"}
+    ):
+        raise EvidenceError(f"{label} terminal scope fields are inconsistent")
+    return value
+
+
 def _validate_attempt(
     attempt: Any,
     *,
     task: dict[str, Any],
     index: int,
+    plan: dict[str, Any],
 ) -> dict[str, Any]:
     label = f"state.json task {task['id']!r} attempt[{index}]"
     if not isinstance(attempt, dict):
@@ -764,7 +1269,17 @@ def _validate_attempt(
         "quarantined_outputs",
         "return_code_unavailable_reason",
     }
+    if plan["schema_version"] == 2:
+        required.update({"execution_context_sha256", "process_scope"})
     _exact_keys(attempt, required, optional=optional, label=label)
+    if plan["schema_version"] == 2:
+        expected_context = plan["execution_context"]["tasks"][task["id"]][
+            "context_sha256"
+        ]
+        if attempt["execution_context_sha256"] != expected_context:
+            raise EvidenceError(
+                f"{label}.execution_context_sha256 does not match plan.json"
+            )
     if not _non_bool_int(attempt["number"]) or attempt["number"] != index + 1:
         raise EvidenceError(f"{label}.number must be contiguous and one-based")
     status = attempt["status"]
@@ -811,6 +1326,17 @@ def _validate_attempt(
     elif status == "running" and child_pid is None:
         raise EvidenceError(
             f"{label} running attempt without a launch guard must identify its child"
+        )
+    if plan["schema_version"] == 2:
+        _validate_attempt_process_scope(
+            attempt["process_scope"],
+            label=f"{label}.process_scope",
+            expected_policy=plan["execution_context"]["tasks"][task["id"]][
+                "process_scope"
+            ],
+            status=status,
+            child_pid=child_pid,
+            child_launch_guard=child_launch_guard,
         )
     return_code = attempt["return_code"]
     if return_code is not None and not _non_bool_int(return_code):
@@ -903,7 +1429,7 @@ def _validate_state_shape(state: Any, plan: dict[str, Any]) -> None:
     _exact_keys(state, required, label="state.json")
     if (
         not _non_bool_int(state["schema_version"])
-        or state["schema_version"] != SCHEMA_VERSION
+        or state["schema_version"] != plan["schema_version"]
         or state["kind"] != "benchhandoff-state"
     ):
         raise EvidenceError("state.json has an unsupported schema or kind")
@@ -976,7 +1502,7 @@ def _validate_state_shape(state: Any, plan: dict[str, Any]) -> None:
                 f"state.json exceeds the {MAX_TOTAL_ATTEMPTS}-attempt global limit"
             )
         validated_attempts = [
-            _validate_attempt(attempt, task=task, index=index)
+            _validate_attempt(attempt, task=task, index=index, plan=plan)
             for index, attempt in enumerate(attempts)
         ]
         for previous in validated_attempts[:-1]:
@@ -1353,21 +1879,39 @@ def _assert_recovery_liveness(context: _RunContext) -> None:
             )
         recorded_token = attempt["child_start_token"]
         current_token = process_start_token(process_id)
-        if current_token is not None and current_token != recorded_token:
-            # The numeric PID was reused; it is not the recorded child.
-            continue
-        liveness = process_liveness(process_id)
+        pid_reused = (
+            current_token is not None and current_token != recorded_token
+        )
         attempt_number = attempt["number"]
-        if liveness == "alive":
-            raise EvidenceError(
-                f"task {task.task_id!r} attempt {attempt_number} child process "
-                f"{process_id} is still alive; refusing resume"
-            )
-        if liveness == "unknown":
-            raise EvidenceError(
-                f"task {task.task_id!r} attempt {attempt_number} child process "
-                f"{process_id} identity or liveness is unknown; refusing resume"
-            )
+        if not pid_reused:
+            liveness = process_liveness(process_id)
+            if liveness == "alive":
+                raise EvidenceError(
+                    f"task {task.task_id!r} attempt {attempt_number} child process "
+                    f"{process_id} is still alive; refusing resume"
+                )
+            if liveness == "unknown":
+                raise EvidenceError(
+                    f"task {task.task_id!r} attempt {attempt_number} child process "
+                    f"{process_id} identity or liveness is unknown; refusing resume"
+                )
+        if context.plan["schema_version"] == 2:
+            scope = attempt["process_scope"]
+            if scope["mode"] == "posix-cooperative-process-group":
+                scope_liveness = process_scope_liveness(
+                    scope["mode"],
+                    scope["scope_id"],
+                )
+                if scope_liveness == "alive":
+                    raise EvidenceError(
+                        f"task {task.task_id!r} attempt {attempt_number} "
+                        "cooperative process group is still active; refusing resume"
+                    )
+                if scope_liveness == "unknown":
+                    raise EvidenceError(
+                        f"task {task.task_id!r} attempt {attempt_number} "
+                        "process-group liveness is unknown; refusing resume"
+                    )
 
 def _recover_incomplete_task(context: _RunContext, task: TaskSpec) -> None:
     task_state = context.state["tasks"][task.task_id]
@@ -1385,6 +1929,9 @@ def _recover_incomplete_task(context: _RunContext, task: TaskSpec) -> None:
         latest["status"] = "interrupted"
         latest["ended_at"] = utc_now()
         latest["interruption_reason"] = "runner did not record a terminal child result"
+        if context.plan["schema_version"] == 2:
+            latest["process_scope"]["empty_confirmed"] = True
+            latest["process_scope"]["closure"] = "recovered-empty"
         if latest["child_pid"] is not None and latest["return_code"] is None:
             latest["return_code_unavailable_reason"] = (
                 "the recorded child identity was no longer live when resume began"
@@ -1559,7 +2106,16 @@ def _finish_failed_attempt(
 
 
 def _run_task(context: _RunContext, task: TaskSpec) -> bool:
+    require_process_identity_support()
     task_state = context.state["tasks"][task.task_id]
+    (
+        resolved_executable,
+        launch_environment,
+        execution_context,
+    ) = _bound_task_execution_context(
+        context,
+        task,
+    )
     verified_inputs = _expected_inputs(context, task)
     for relative in task.outputs:
         ensure_output_parent_boundary(
@@ -1607,6 +2163,14 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
         "stdout": stdout_relative,
         "stderr": stderr_relative,
     }
+    if execution_context is not None:
+        attempt["execution_context_sha256"] = execution_context["context_sha256"]
+        attempt["process_scope"] = {
+            **execution_context["process_scope"],
+            "scope_id": None,
+            "empty_confirmed": False,
+            "closure": "pending-launch",
+        }
     task_state["attempts"].append(attempt)
     task_state["status"] = "running"
     context.state["status"] = "running"
@@ -1623,7 +2187,11 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
         stderr_handle.close()
         raise
 
-    environment = os.environ.copy()
+    environment = (
+        os.environ.copy()
+        if context.plan["schema_version"] == 1
+        else dict(launch_environment or {})
+    )
     environment.update(
         {
             "BENCHHANDOFF_RUN_ID": context.plan["run_id"],
@@ -1636,28 +2204,89 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
     launch_error: str | None = None
     interrupted = False
     process: subprocess.Popen[bytes] | None = None
+    process_scope: ProcessScope | None = None
+
+    def mark_scope_empty(closure: str) -> None:
+        if execution_context is None:
+            return
+        attempt["process_scope"]["empty_confirmed"] = True
+        attempt["process_scope"]["closure"] = closure
+
+    def stop_managed_process() -> int:
+        if process is None:
+            raise EvidenceError("no child process is available for shutdown")
+        if process_scope is None:
+            return stop_process(process)
+        stopped_return_code = process_scope.terminate()
+        if not process_scope.wait_empty(0):
+            raise EvidenceError("process scope was not empty after termination")
+        mark_scope_empty("terminated")
+        process_scope.close()
+        return stopped_return_code
+
     try:
         try:
-            process = subprocess.Popen(
-                list(task.argv),
-                cwd=context.suite.root,
-                stdin=subprocess.DEVNULL,
-                stdout=stdout_handle,
-                stderr=stderr_handle,
-                env=environment,
-                shell=False,
-                close_fds=True,
-            )
-        except OSError as exc:
+            if execution_context is None:
+                process = subprocess.Popen(
+                    list(task.argv),
+                    cwd=context.suite.root,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    env=environment,
+                    shell=False,
+                    close_fds=True,
+                )
+            else:
+                process_scope = ProcessScope.start(
+                    list(task.argv),
+                    executable=str(resolved_executable),
+                    cwd=context.suite.root,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout_handle,
+                    stderr=stderr_handle,
+                    env=environment,
+                )
+                process = process_scope.process
+                expected_scope = execution_context["process_scope"]
+                if (
+                    process_scope.mode != expected_scope["mode"]
+                    or process_scope.cooperative
+                    is not expected_scope["cooperative"]
+                ):
+                    stop_managed_process()
+                    raise EvidenceError(
+                        "launched process scope does not match the bound policy"
+                    )
+        except (OSError, ProcessScopeLaunchError) as exc:
             attempt["child_launch_guard"] = False
+            if execution_context is not None:
+                attempt["process_scope"].update(
+                    {
+                        "scope_id": None,
+                        "empty_confirmed": True,
+                        "closure": (
+                            "launch-cleaned"
+                            if isinstance(exc, ProcessScopeLaunchError)
+                            else "not-created"
+                        ),
+                    }
+                )
             launch_error = f"child launch failed: {exc}"
         if process is not None:
             attempt["child_pid"] = process.pid
+            if execution_context is not None:
+                attempt["process_scope"].update(
+                    {
+                        "scope_id": process.pid,
+                        "closure": "active",
+                    }
+                )
             captured_token = process_start_token(process.pid)
             if captured_token is None:
                 attempt["child_start_token"] = "unavailable"
                 try:
-                    return_code = stop_process(process)
+                    return_code = stop_managed_process()
                 except EvidenceError as control_exc:
                     raise EvidenceError(
                         "child start identity was unavailable and shutdown could not be confirmed"
@@ -1671,10 +2300,10 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
                     _write_state(context)
                 except KeyboardInterrupt:
                     interrupted = True
-                    return_code = stop_process(process)
+                    return_code = stop_managed_process()
                 except Exception as exc:
                     try:
-                        return_code = stop_process(process)
+                        return_code = stop_managed_process()
                     except EvidenceError as control_exc:
                         raise EvidenceError(
                             "child identity state write failed and child shutdown could not be confirmed"
@@ -1690,18 +2319,81 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
                         return_code = process.wait()
                     except KeyboardInterrupt:
                         interrupted = True
-                        return_code = stop_process(process)
+                        return_code = stop_managed_process()
                     except OSError as exc:
                         try:
-                            return_code = stop_process(process)
+                            return_code = stop_managed_process()
                         except EvidenceError as control_exc:
                             raise EvidenceError(
                                 "child wait failed and child shutdown could not be confirmed"
                             ) from control_exc
                         launch_error = f"child wait failed: {exc}"
+                    if (
+                        execution_context is not None
+                        and launch_error is None
+                        and not interrupted
+                    ):
+                        if process_scope is None:
+                            raise EvidenceError(
+                                "version 2 child lacks its process scope"
+                            )
+                        if process_scope.wait_empty(0.25):
+                            mark_scope_empty("natural-empty")
+                            process_scope.close()
+                        else:
+                            return_code = stop_managed_process()
+                            launch_error = (
+                                "process scope remained active after its leader exited"
+                            )
     finally:
+        cleanup_error: EvidenceError | None = None
+        if process_scope is not None:
+            try:
+                process_scope.close()
+            except EvidenceError as exc:
+                cleanup_error = EvidenceError(
+                    "process scope cleanup could not be confirmed"
+                )
+                cleanup_error.__cause__ = exc
         stdout_handle.close()
         stderr_handle.close()
+        if cleanup_error is not None:
+            raise cleanup_error
+    post_exit_context_error: str | None = None
+    if execution_context is not None and process is not None:
+        if not attempt["process_scope"]["empty_confirmed"]:
+            raise EvidenceError(
+                "version 2 child termination lacks an empty process-scope confirmation"
+            )
+        try:
+            _bound_task_execution_context(
+                context,
+                task,
+                phase="after child exit",
+            )
+        except BenchHandoffError as exc:
+            post_exit_context_error = (
+                f"post-exit execution-context validation failed: {exc}"
+            )
+
+    if post_exit_context_error is not None:
+        if launch_error is not None:
+            prior_outcome = launch_error
+        elif interrupted:
+            prior_outcome = "runner received KeyboardInterrupt"
+        elif return_code != 0:
+            prior_outcome = f"child process exited non-zero ({return_code})"
+        else:
+            prior_outcome = "child process exited zero"
+        _finish_failed_attempt(
+            context,
+            task,
+            attempt,
+            status="interrupted" if interrupted else "failed",
+            detail=f"{post_exit_context_error}; child outcome: {prior_outcome}",
+            return_code=return_code,
+        )
+        return False
     if launch_error is not None:
         _finish_failed_attempt(
             context,
@@ -1759,7 +2451,7 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
             task,
             attempt,
             status="failed",
-            detail=f"output or input validation failed: {exc}",
+            detail=f"post-run evidence validation failed: {exc}",
             return_code=return_code,
         )
         return False
@@ -1817,7 +2509,7 @@ def _build_bundle(context: _RunContext) -> dict[str, Any]:
         run_artifacts.append({"path": relative, **identity})
 
     bundle = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": context.plan["schema_version"],
         "kind": "benchhandoff-bundle",
         "run_id": context.plan["run_id"],
         "created_at": utc_now(),
@@ -1829,6 +2521,8 @@ def _build_bundle(context: _RunContext) -> dict[str, Any]:
         "verified_outputs": _final_outputs(context),
         "run_artifacts": run_artifacts,
     }
+    if context.plan["schema_version"] == 2:
+        bundle["execution_context"] = context.plan["execution_context"]
     atomic_write_json(bundle_path, bundle)
     return bundle
 
@@ -2040,9 +2734,15 @@ def _build_resume_decision(context: _RunContext) -> dict[str, Any]:
             "unverified_outputs": output_observations,
             "quarantine_candidates": quarantine,
         }
+        if context.plan["schema_version"] == 2:
+            _, _, current_execution_context = _bound_task_execution_context(
+                context,
+                next_task_spec,
+            )
+            next_task["execution_context"] = current_execution_context
 
     decision: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": context.plan["schema_version"],
         "kind": "benchhandoff-resume-decision",
         "run_id": context.plan["run_id"],
         "run_directory": str(context.run_root),
@@ -2153,12 +2853,12 @@ def _start_run_checked(suite_file: Path | str, run_directory: Path | str) -> Run
                 labels=(f"output parent for {relative!r}", "run-directory parent"),
             )
 
-    seed_inputs = _preflight_suite(suite)
+    seed_inputs, execution_context = _preflight_suite(suite)
     run_root = prepare_new_directory(run_candidate, label="run directory")
     (run_root / LOGS_DIRECTORY).mkdir(mode=0o700)
     (run_root / QUARANTINE_DIRECTORY).mkdir(mode=0o700)
 
-    plan = _initial_plan(suite, run_root, seed_inputs)
+    plan = _initial_plan(suite, run_root, seed_inputs, execution_context)
     atomic_write_json(run_root / PLAN_FILE, plan)
     plan_identity = file_identity(run_root / PLAN_FILE, label=PLAN_FILE)
     create_empty_regular(run_root / EVENTS_FILE, label=EVENTS_FILE)
@@ -2205,6 +2905,7 @@ def _resume_run_checked(
             "expected resume decision SHA-256 must be 64 lowercase hexadecimal characters"
         )
     context = _load_context(run_directory)
+    _verify_next_execution_context(context)
     if expected_decision_sha256 is not None:
         actual_decision = _build_resume_decision(context)["decision_sha256"]
         if actual_decision != expected_decision_sha256:
@@ -2231,6 +2932,7 @@ def _resume_run_checked(
     _verify_completed_prefix(context)
     _assert_recovery_liveness(context)
     _assert_resume_attempt_budget(context)
+    _verify_next_execution_context(context)
     if expected_decision_sha256 is not None:
         actual_decision = _build_resume_decision(context)["decision_sha256"]
         if actual_decision != expected_decision_sha256:
@@ -2286,10 +2988,12 @@ def _validate_bundle_shape(bundle: Any, plan: dict[str, Any]) -> None:
         "verified_outputs",
         "run_artifacts",
     }
+    if plan["schema_version"] == 2:
+        required.add("execution_context")
     _exact_keys(bundle, required, label="bundle.json")
     if (
         not _non_bool_int(bundle["schema_version"])
-        or bundle["schema_version"] != SCHEMA_VERSION
+        or bundle["schema_version"] != plan["schema_version"]
         or bundle["kind"] != "benchhandoff-bundle"
     ):
         raise EvidenceError("bundle.json has an unsupported schema or kind")
@@ -2299,6 +3003,11 @@ def _validate_bundle_shape(bundle: Any, plan: dict[str, Any]) -> None:
     _validate_file_record(bundle["suite_file"], label="bundle.json suite_file")
     if bundle["suite_file"] != plan["suite_file"]:
         raise EvidenceError("bundle.json suite_file does not match plan.json")
+    if (
+        plan["schema_version"] == 2
+        and bundle["execution_context"] != plan["execution_context"]
+    ):
+        raise EvidenceError("bundle.json execution_context does not match plan.json")
     _validate_identity_map(
         bundle["seed_inputs"],
         label="bundle.json seed_inputs",

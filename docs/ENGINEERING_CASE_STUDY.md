@@ -174,6 +174,32 @@ This narrows a real unattended-agent operations gap without claiming that the
 orphaned task is safe to retry. A malformed record, foreign tombstone,
 unexpected link, or ambiguous owner still stops for manual evidence review.
 
+## Version 2: launch context and descendant quiescence
+
+Version 1 could prove declared file identity while still resolving `argv[0]`
+through an unbound caller environment and controlling only the direct child.
+That left two practical gaps: the same task could resume under a different
+executable, and a leader could exit while a descendant continued mutating an
+output.
+
+Version 2 closes those exact gaps without claiming a full environment snapshot.
+It byte-checks one declared context descriptor, binds the resolved executable's
+content and hashed path identity, and starts from a minimal non-inheriting
+environment. The descriptor remains opaque; it does not prove package, driver,
+container, hardware, or external-object state.
+
+The runner also owns a process scope. Windows assigns a suspended leader to a
+kill-on-close Job before resume. Linux launches a new session/process group and
+uses cooperative TERM/KILL cleanup. A leader's zero return code is insufficient:
+the complete scope must be empty before output hashing. Real synthetic tests
+spawn a grandchild and inject leader exit, state-write failure, and runner hard
+exit.
+
+This is lifecycle evidence, not a sandbox. A Linux descendant can deliberately
+leave its group, Windows work can be created outside the Job through other
+mechanisms, and neither backend restricts filesystem, network, syscalls, or
+account permissions.
+
 ## A feature that was not shipped
 
 A diagnostic-export command was prototyped during local hardening and then
@@ -197,6 +223,8 @@ not ready merely because its happy path works.
 | Stale reviewed-decision refusal without mutation | `tests/test_resume_decision.py`, focused reproduction-package JSON | Signature security, locking, or hostile concurrency |
 | Cooperative local writer contention | `src/benchhandoff/writer_lock.py`, `tests/test_writer_lock.py`, `benchmarks/synthetic/run_writer_contention.py` | Remote lease, fencing, network-filesystem proof, hostile-writer protection, or production reliability |
 | Evidence-bound orphan-lock recovery | `src/benchhandoff/writer_lock.py`, `tests/test_writer_lock_recovery.py`, `tests/test_writer_lock_recovery_boundaries.py`, `benchmarks/synthetic/run_writer_recovery.py` | Safe child retry, distributed recovery, hostile-writer protection, or production reliability |
+| Version 2 context binding | `src/benchhandoff/model.py`, `src/benchhandoff/engine.py`, `tests/test_execution_context.py` | VM/container snapshot creation, package/driver capture, remote attestation, or reproducible builds |
+| Process-family quiescence | `src/benchhandoff/processes.py`, `tests/test_process_scope.py`, `tests/test_process_scope_engine.py` | Sandbox security, hostile descendant containment, cgroup semantics, or production reliability |
 | 18→13 and 5→0 counts | Reproduction-package JSON plus `SHA256SUMS.txt` | Wall-clock speedup or external use |
 | Record semantics | `docs/EVIDENCE_FORMAT.md`, `docs/ARCHITECTURE.md` | Signed provenance or trusted time |
 | Known failure and threat boundaries | `LIMITATIONS.md` | Security certification |
@@ -224,12 +252,13 @@ demonstrates systems reasoning about both shapes without claiming to be a full
 agent runtime.
 
 It has **not** been deployed in an agent stack, integrated with Genie Sim,
-validated on a GPU workload, adopted by an external user, or run in public CI.
-The canonical external-evidence ledger therefore reports zero independent
+validated on a GPU workload, or adopted by an external user. Version 0.1 has a
+public release and public cross-platform CI; the version 2 change remains a
+candidate until its own exact commit completes that matrix. The canonical
+external-evidence ledger therefore reports zero independent
 reproductions, independent users, institutional adopters, and third-party
 reviews; an opened Issue cannot change those counts.
-The next meaningful evidence is therefore external: a licensed public release,
-online cross-platform results, one bounded independent reproduction, and a
-real upstream or adapter use case. Until those events exist, they remain goals,
-not résumé claims. See
+The next meaningful evidence is therefore exact-commit public version 2 CI,
+then genuinely independent reproduction or use. Until those events exist, they
+remain goals, not résumé claims. See
 [the ledger taxonomy and review rules](EXTERNAL_EVIDENCE.md).

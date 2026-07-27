@@ -7,6 +7,11 @@ brief: sequential `start` / `resume` / `verify` commands, TOML configuration,
 regular-file boundaries, content identities, atomic state, logs, fail-closed
 child execution, evidence bundling, and a synthetic recovery benchmark.
 
+The v0.2 execution-context and process-family extension was written in the same
+clean-room repository from public operating-system and Python interfaces. No
+private research implementation, infrastructure record, or unpublished
+experiment content was used.
+
 ## Excluded sources
 
 During this implementation:

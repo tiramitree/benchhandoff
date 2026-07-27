@@ -1,4 +1,4 @@
-# BenchHandoff v0.1
+# BenchHandoff v0.2
 
 [![CI](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
 
@@ -36,6 +36,27 @@ BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
 scheduler, sandbox, cryptographic attestation service, or guarantee of full
 reproducibility.
 
+## What v0.2 adds
+
+Suite schema version 2 binds a real descriptor file, the resolved executable's
+content and hashed path identity, a non-inheriting launch-environment policy,
+and the selected process-family backend. Those identities are checked before
+launch, after leader exit, and before resume mutation.
+
+Windows uses an anonymous kill-on-close Job Object and assigns a suspended
+leader before its first instruction can run. Linux uses a new session/process
+group with cooperative TERM/KILL cleanup and resume-time membership checks.
+Every version 2 attempt must prove its in-scope process family empty before any
+output is hashed. A surviving descendant therefore fails the attempt and
+cannot be sealed into a bundle.
+
+This is evidence-bound launch context plus process-family lifecycle control.
+It is not a VM/container snapshot system, cgroup implementation, package or
+driver inventory, security sandbox, or hostile-code boundary. The Linux
+process-group backend can be escaped by a descendant that creates a new
+session. Exact design and claim boundaries are in
+[the version 2 protocol note](docs/EXECUTION_CONTEXT_AND_PROCESS_SCOPE.md).
+
 ## What v0.1 proves
 
 For declared files, v0.1:
@@ -69,15 +90,17 @@ guarantee. See [LIMITATIONS.md](LIMITATIONS.md).
 
 - Python 3.11 or newer. Public CI covers CPython 3.11 through 3.14.
 - Windows or Linux for child execution. Linux requires `/proc` so the runner can
-  bind a PID to a stable process-start identity.
+  bind a PID to a stable process-start identity and inspect version 2 process
+  groups.
 - No third-party runtime packages.
 - A suite directory and a separate run-evidence directory.
 - The suite, every output's existing parent, and the run/quarantine directory
   must be on the same filesystem so quarantine moves cannot cross devices.
 
-macOS and other operating systems are not supported for execution in v0.1; the
-runner fails closed when it cannot obtain a stable child-start identity. The
-optional package build uses setuptools. Running from source needs no install.
+macOS and other operating systems are not supported for execution. A new start
+rejects them before creating the run directory; resume rechecks support before
+any child launch. The optional package build uses setuptools. Running from
+source needs no install.
 
 ## Validation status
 
@@ -234,6 +257,32 @@ invokes `python` by name. A success-only example remains under `examples/basic`.
 
 ## Suite format
 
+Version 2 adds a byte-verified context descriptor. Its path must also be a seed
+task input:
+
+```toml
+version = 2
+name = "context-bound-copy"
+
+[context]
+path = "context.json"
+media_type = "application/vnd.example.context.v1+json"
+digest = "sha256:<digest of context.json>"
+size = 80
+
+[[task]]
+id = "copy-upper"
+argv = ["python", "copy_upper.py", "input.txt", "output.txt"]
+inputs = ["context.json", "copy_upper.py", "input.txt"]
+outputs = ["output.txt"]
+```
+
+The executable must be a portable bare name or suite-relative path; version 2
+rejects an absolute `argv[0]`. A runnable synthetic fixture is under
+[`examples/context_bound`](examples/context_bound).
+
+Version 1 remains readable and executable with its original evidence shape:
+
 ```toml
 version = 1
 name = "basic-sha256"
@@ -251,16 +300,21 @@ path must be unique and absent before its task starts. Paths use portable `/`
 separators and may not contain empty, `.`, `..`, `\`, `:`, or absolute
 components.
 
-The v0.1 parser bounds the suite to 256 KiB, 64 tasks, and 512 total declared
+The parser bounds the suite to 256 KiB, 64 tasks, and 512 total declared
 input/output references. Each task is bounded to 128 arguments, 64 inputs, and
 64 outputs; additional byte and portable-path limits are enforced before the
 run directory is created.
 
-Commands receive:
+All commands receive:
 
 - `BENCHHANDOFF_RUN_ID`
 - `BENCHHANDOFF_TASK_ID`
 - `BENCHHANDOFF_ATTEMPT`
+
+Version 1 additionally inherits the caller environment. Version 2 does not: it
+passes only these control variables plus hashed-and-bound `SystemRoot` on
+Windows. In particular it does not pass `PATH`, tokens, user-home variables, or
+arbitrary caller configuration.
 
 Declare scripts, configs, datasets, and other material dependencies as inputs
 when their identities need to be covered by evidence.
@@ -273,8 +327,8 @@ directory, no bundle exists, and partial regular-file outputs remain unverified.
 
 1. verifies the suite, seed inputs, plan, event chain, and completed prefix;
 2. refuses to mutate evidence if the next-attempt budget is exhausted;
-3. refuses to proceed while a recorded child may still be alive or a launch
-   identity remains unresolved;
+3. refuses to proceed while a recorded child or version 2 cooperative process
+   group may still be alive, or a launch identity remains unresolved;
 4. moves partial regular-file outputs into `quarantine/`;
 5. appends a new attempt and re-runs the first incomplete task; and
 6. creates a bundle only after every task output is a verified regular file.
@@ -454,6 +508,7 @@ review, deduplication, retraction, and validator boundary.
 
 - [Evidence format](docs/EVIDENCE_FORMAT.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Version 2 execution context and process scope](docs/EXECUTION_CONTEXT_AND_PROCESS_SCOPE.md)
 - [Recovery example](examples/recovery_pipeline/README.md)
 - [Engineering case study](docs/ENGINEERING_CASE_STUDY.md)
 - [External evidence ledger](docs/EXTERNAL_EVIDENCE.md)

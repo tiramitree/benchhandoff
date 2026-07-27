@@ -33,6 +33,7 @@ From the repository root:
 
 ```bash
 python tools/verify_external_evidence.py
+python tools/verify_public_privacy.py
 PYTHONPATH=src python -m unittest discover -s tests -v
 python -m compileall -q src tests tools benchmarks examples
 ```
@@ -40,6 +41,13 @@ python -m compileall -q src tests tools benchmarks examples
 On PowerShell, set `$env:PYTHONPATH = "src"` first. Report passes, failures,
 errors, and skips separately. Do not convert a skipped platform capability into
 a pass.
+
+The version 2 lifecycle tests create real child and grandchild processes. On
+Windows they exercise Job assignment-before-resume and kill-on-close after a
+hard runner exit. On Ubuntu they exercise cooperative process-group
+termination and residual-group refusal after a hard runner exit. A green result
+supports only those synthetic operating-system boundaries; it is not a sandbox,
+production reliability rate, or external reproduction.
 
 ## Reproduce the synthetic records
 
