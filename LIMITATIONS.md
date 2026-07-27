@@ -5,15 +5,18 @@ distributed workflow engine.
 
 ## Implemented execution targets
 
-- Child execution targets Windows and Linux only. Version 0.1 has a complete
-  public cross-platform matrix; version 0.2 remains a candidate until its own
-  exact commit completes that matrix.
+- Child execution targets Windows and Linux only. Version 2 code-bearing commit
+  `pre-rewrite-commit-retired` completed the public Ubuntu 24.04
+  and Windows Server 2025 matrix across CPython 3.11 through 3.14 in
+  [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
 - Linux requires readable `/proc` process identities and group membership.
   macOS and other operating systems do not have a supported start-token
   implementation. A new start rejects them before creating the run directory;
   resume rechecks support before any child launch.
 - A checked-in workflow is not evidence that a new change passed online. Do not
-  transfer the version 0.1 run result to the version 0.2 candidate.
+  transfer the recorded result to another commit, platform, interpreter,
+  workload, or environment. A release tag must point to a commit that completed
+  its own release-gated CI.
 
 ## Execution isolation
 
@@ -153,6 +156,8 @@ in scope.
 
 ## Claim boundary
 
-Current validation is local and synthetic. No claim is made about production
-use, external users, independent reproduction, real-workload performance,
-public release, or compatibility with a specific embodied-simulation stack.
+Current validation is maintainer-operated and synthetic, including local tests
+and public CI. No claim is made about production use, external users,
+independent reproduction, real-workload performance, or compatibility with a
+specific embodied-simulation stack. A GitHub tag or release is a distribution
+event; it does not establish any of those external claims.

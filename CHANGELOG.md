@@ -3,7 +3,7 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-07-28
 
 ### Added
 
@@ -19,8 +19,9 @@ not a PyPI publication, supported-production claim, or external-adoption event.
   before resume, kill-on-close, active-member queries, and empty-scope gates.
 - Cooperative Linux session/process-group lifecycle control with TERM/KILL,
   bounded empty confirmation, and resume-time residual-group refusal.
-- Real child-to-grandchild tests for explicit cleanup, leader exit, state-write
-  failure, and hard runner exit on both platform branches.
+- Process-spawning synthetic child-to-grandchild tests for explicit cleanup,
+  leader exit, state-write failure, and hard runner exit on both platform
+  branches.
 - Linux PID liveness distinguishes terminal zombies from active processes and
   treats unreadable or malformed `/proc` identity as unknown.
 - A public synthetic version 2 example and a protocol/claim-boundary note.
@@ -36,6 +37,18 @@ not a PyPI publication, supported-production claim, or external-adoption event.
   CPython `sys.executable`, can reconstruct the bound executable.
 - These maintainer-authored synthetic tests are not production reliability,
   external use, independent reproduction, or third-party review.
+
+### Validation
+
+- Version 2 code-bearing commit
+  `pre-rewrite-commit-retired` completed all ten jobs in public
+  main-branch run
+  [pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+  Eight Ubuntu 24.04 and Windows Server 2025 jobs across CPython 3.11 through
+  3.14 each ran 186 tests without failures, errors, or skips. The two dependent
+  jobs verified the canonical synthetic evidence and build-once exact
+  distribution. This is maintainer-operated synthetic validation, not
+  production, independent, external-use, or adoption evidence.
 
 ## 0.1.0 - 2026-07-26
 
@@ -98,8 +111,8 @@ not a PyPI publication, supported-production claim, or external-adoption event.
 - TestPyPI or PyPI publication. A future package-registry release requires its
   own explicit authorization and the registry gates in `docs/RELEASING.md`.
 - A bounded, cross-platform, reparse-safe diagnostic export design; an initial
-  local implementation was withheld after independent review found unresolved
-  Windows path-race and resource-budget risks.
+  local implementation was withheld after a separate Codex-assisted local
+  static review found unresolved Windows path-race and resource-budget risks.
 
 The GitHub Release attaches the exact CI-built wheel and sdist, their
 `SHA256SUMS`, and the verified synthetic evidence records. It does not change

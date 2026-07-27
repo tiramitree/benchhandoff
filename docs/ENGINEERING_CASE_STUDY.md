@@ -182,18 +182,19 @@ That left two practical gaps: the same task could resume under a different
 executable, and a leader could exit while a descendant continued mutating an
 output.
 
-Version 2 closes those exact gaps without claiming a full environment snapshot.
-It byte-checks one declared context descriptor, binds the resolved executable's
-content and hashed path identity, and starts from a minimal non-inheriting
-environment. The descriptor remains opaque; it does not prove package, driver,
-container, hardware, or external-object state.
+Version 2 addresses those gaps within the declared cooperative scope without
+claiming a full environment snapshot. It byte-checks one declared context
+descriptor, binds the resolved executable's content and hashed path identity,
+and starts from a minimal non-inheriting environment. The descriptor remains
+opaque; it does not prove package, driver, container, hardware, or
+external-object state.
 
 The runner also owns a process scope. Windows assigns a suspended leader to a
 kill-on-close Job before resume. Linux launches a new session/process group and
 uses cooperative TERM/KILL cleanup. A leader's zero return code is insufficient:
-the complete scope must be empty before output hashing. Real synthetic tests
-spawn a grandchild and inject leader exit, state-write failure, and runner hard
-exit.
+the in-scope process family must be empty before output hashing.
+Process-spawning synthetic tests spawn a grandchild and inject leader exit,
+state-write failure, and runner hard exit.
 
 This is lifecycle evidence, not a sandbox. A Linux descendant can deliberately
 leave its group, Windows work can be created outside the Job through other
@@ -252,13 +253,17 @@ demonstrates systems reasoning about both shapes without claiming to be a full
 agent runtime.
 
 It has **not** been deployed in an agent stack, integrated with Genie Sim,
-validated on a GPU workload, or adopted by an external user. Version 0.1 has a
-public release and public cross-platform CI; the version 2 change remains a
-candidate until its own exact commit completes that matrix. The canonical
-external-evidence ledger therefore reports zero independent
-reproductions, independent users, institutional adopters, and third-party
-reviews; an opened Issue cannot change those counts.
-The next meaningful evidence is therefore exact-commit public version 2 CI,
-then genuinely independent reproduction or use. Until those events exist, they
-remain goals, not résumé claims. See
+validated on a GPU workload, or adopted by an external user. Version 2
+code-bearing commit `pre-rewrite-commit-retired` completed all
+ten jobs in public main-branch
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions):
+eight Ubuntu 24.04 and Windows Server 2025 jobs across CPython 3.11 through
+3.14, the canonical synthetic-evidence job, and the exact-distribution job.
+That is maintainer-operated synthetic validation, not production, independent,
+or external-use evidence. The canonical external-evidence ledger therefore
+reports zero independent reproductions, independent users, institutional
+adopters, and third-party reviews; an opened Issue cannot change those counts.
+The next meaningful evidence is a GitHub-only release that binds the exact
+CI-built bytes, then genuinely independent reproduction or use. Until those
+events exist, they remain goals, not résumé claims. See
 [the ledger taxonomy and review rules](EXTERNAL_EVIDENCE.md).

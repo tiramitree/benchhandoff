@@ -16,11 +16,12 @@ distributed fencing, or a remote lease.
 
 ## Supported versions
 
-Version 0.1.0 is an early GitHub release and 0.2.0 is a candidate, not a
-supported production line. Security reports may identify `v0.1.0`, `v0.2.0`
-when released, or an exact `main` commit. There
-is no response-time, remediation-time, compatibility, or maintenance
-commitment.
+Version 0.1.0 is an early GitHub release. Version 0.2.0 remains a candidate
+until its tag, release, and exact CI-built assets exist; its code-bearing commit
+`pre-rewrite-commit-retired` has public cross-platform CI.
+Neither version is a supported production line. Security reports may identify
+`v0.1.0`, `v0.2.0` when released, or an exact `main` commit. There is no
+response-time, remediation-time, compatibility, or maintenance commitment.
 
 ## Reporting a vulnerability
 

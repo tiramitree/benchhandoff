@@ -104,7 +104,33 @@ source needs no install.
 
 ## Validation status
 
-The first complete green public
+The version 2 code-bearing commit
+`pre-rewrite-commit-retired` completed all ten jobs in public
+main-branch
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+on 2026-07-28 CST. Each of the eight Ubuntu 24.04 and Windows Server 2025 jobs
+across CPython 3.11 through 3.14 ran 186 tests with no failures, errors, or
+skips. The dependent evidence job generated and re-verified the canonical
+five-file synthetic package. The package job built one wheel and one sdist,
+passed the public-privacy, strict Twine, and embedded-license checks, installed
+the exact wheel outside the checkout, and completed both the version 1 recovery
+smoke and the version 2 context-bound launch smoke. These are
+maintainer-operated synthetic CI results, not external use, independent
+reproduction, production reliability, or real-workload performance evidence.
+
+The version 2 branch did not pass on its first public attempt. In
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+all four Windows jobs passed while all four Ubuntu jobs exposed that a
+grandchild test helper incorrectly relied on CPython reconstructing
+`sys.executable` from the intentionally portable `argv[0]` in the version 2
+no-`PATH` environment. The repair used Linux `/proc/self/exe` only in that test
+helper and also made zombie and unreadable process-state handling fail closed.
+The complete feature-branch
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+and the main-branch run above then passed without relaxing the launch
+environment.
+
+For the historical version 1 implementation, the first complete green public
 [CI run](https://github.com/tiramitree/benchhandoff/actions)
 finished on 2026-07-26 CST at exact source
 `pre-rewrite-commit-retired`. All eight Ubuntu 24.04 and
