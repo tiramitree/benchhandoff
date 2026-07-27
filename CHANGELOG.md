@@ -21,6 +21,8 @@ not a PyPI publication, supported-production claim, or external-adoption event.
   bounded empty confirmation, and resume-time residual-group refusal.
 - Real child-to-grandchild tests for explicit cleanup, leader exit, state-write
   failure, and hard runner exit on both platform branches.
+- Linux PID liveness distinguishes terminal zombies from active processes and
+  treats unreadable or malformed `/proc` identity as unknown.
 - A public synthetic version 2 example and a protocol/claim-boundary note.
 
 ### Boundaries
@@ -29,6 +31,9 @@ not a PyPI publication, supported-production claim, or external-adoption event.
   package or driver inventory, or remote attestation.
 - The Windows Job and Linux process group are lifecycle controls, not a
   sandbox. Linux descendants can deliberately leave the group.
+- Linux version 2 preserves the declared portable `argv[0]` while omitting
+  `PATH`; programs cannot assume that `argv[0]`-based self-location, including
+  CPython `sys.executable`, can reconstruct the bound executable.
 - These maintainer-authored synthetic tests are not production reliability,
   external use, independent reproduction, or third-party review.
 

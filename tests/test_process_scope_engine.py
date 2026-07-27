@@ -103,11 +103,17 @@ class ProcessScopeEngineTests(unittest.TestCase):
         self,
     ) -> None:
         worker = """\
+import os
 import subprocess
 import sys
 
+python_executable = (
+    os.readlink("/proc/self/exe")
+    if sys.platform.startswith("linux")
+    else sys.executable
+)
 subprocess.Popen(
-    [sys.executable, "grandchild.py"],
+    [python_executable, "grandchild.py"],
     stdin=subprocess.DEVNULL,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
@@ -157,8 +163,13 @@ import sys
 import time
 from pathlib import Path
 
+python_executable = (
+    os.readlink("/proc/self/exe")
+    if sys.platform.startswith("linux")
+    else sys.executable
+)
 grandchild = subprocess.Popen(
-    [sys.executable, "grandchild.py"],
+    [python_executable, "grandchild.py"],
     stdin=subprocess.DEVNULL,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
@@ -237,8 +248,13 @@ import sys
 import time
 from pathlib import Path
 
+python_executable = (
+    os.readlink("/proc/self/exe")
+    if sys.platform.startswith("linux")
+    else sys.executable
+)
 grandchild = subprocess.Popen(
-    [sys.executable, "grandchild.py"],
+    [python_executable, "grandchild.py"],
     stdin=subprocess.DEVNULL,
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,

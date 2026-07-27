@@ -50,9 +50,44 @@ class ProcessGuardTests(unittest.TestCase):
                 return_value="unknown",
             ):
                 self.assertEqual(process_liveness(424242), "unknown")
+        elif sys.platform.startswith("linux") and Path("/proc").is_dir():
+            with mock.patch.object(
+                processes,
+                "_linux_process_liveness",
+                return_value="unknown",
+            ):
+                self.assertEqual(process_liveness(424242), "unknown")
         else:
             with mock.patch.object(processes.os, "kill", side_effect=PermissionError):
                 self.assertEqual(process_liveness(424242), "unknown")
+
+    def test_linux_liveness_treats_zombie_as_terminal_and_parse_failure_as_unknown(
+        self,
+    ) -> None:
+        for state in ("Z", "X"):
+            with (
+                self.subTest(state=state),
+                mock.patch.object(
+                    Path,
+                    "read_text",
+                    return_value=f"123 (synthetic worker) {state} 1 123 123 0",
+                ),
+            ):
+                self.assertEqual(processes._linux_process_liveness(123), "dead")
+        with mock.patch.object(
+            Path,
+            "read_text",
+            side_effect=FileNotFoundError("synthetic exit race"),
+        ):
+            self.assertEqual(processes._linux_process_liveness(123), "dead")
+        with mock.patch.object(Path, "read_text", return_value="malformed"):
+            self.assertEqual(processes._linux_process_liveness(123), "unknown")
+        with mock.patch.object(
+            Path,
+            "read_text",
+            side_effect=PermissionError("synthetic denial"),
+        ):
+            self.assertEqual(processes._linux_process_liveness(123), "unknown")
 
     def test_stop_process_uses_bounded_terminate_then_kill(self) -> None:
         class StubbornProcess:

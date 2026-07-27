@@ -929,6 +929,23 @@ def process_start_token(process_id: int | None) -> str | None:
         return _linux_process_start_token(process_id)
     return None
 
+
+def _linux_process_liveness(process_id: int) -> ProcessLiveness:
+    try:
+        process_stat = Path(f"/proc/{process_id}/stat").read_text(encoding="ascii")
+    except FileNotFoundError:
+        return "dead"
+    except (OSError, UnicodeError):
+        return "unknown"
+    closing_parenthesis = process_stat.rfind(")")
+    if closing_parenthesis < 0:
+        return "unknown"
+    fields_after_comm = process_stat[closing_parenthesis + 2 :].split()
+    if not fields_after_comm:
+        return "unknown"
+    return "dead" if fields_after_comm[0] in {"Z", "X"} else "alive"
+
+
 def process_liveness(process_id: int | None) -> ProcessLiveness:
     """Classify a PID without treating probe failures as evidence of death."""
 
@@ -936,6 +953,12 @@ def process_liveness(process_id: int | None) -> ProcessLiveness:
         return "dead"
     if os.name == "nt":
         return _windows_process_liveness(process_id)
+    if (
+        os.name == "posix"
+        and sys.platform.startswith("linux")
+        and Path("/proc").is_dir()
+    ):
+        return _linux_process_liveness(process_id)
     try:
         os.kill(process_id, 0)
     except ProcessLookupError:

@@ -49,6 +49,13 @@ length. `PATH`, credentials, tokens, user-home variables, package settings,
 and arbitrary caller variables are not inherited. A task that needs an
 additional public configuration value should consume a declared file instead.
 
+On Linux the child still receives the declared portable `argv[0]`. Because no
+`PATH` is provided, software that derives its own executable from those two
+values may not reconstruct the bound path. In particular, CPython
+`sys.executable` is not guaranteed to be usable for self-relaunch. A task that
+requires self-location must use an explicit declared mechanism; Linux-specific
+code can query `/proc/self/exe`.
+
 This is an evidence-bound launch context, not a package lock, filesystem
 snapshot, driver inventory, hardware identity, remote attestation, or
 reproducible-build guarantee.

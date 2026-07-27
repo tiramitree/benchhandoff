@@ -33,6 +33,12 @@ distributed workflow engine.
   Linux process group, and requires that scope to be empty before output
   hashing. Windows mechanisms that create work outside the Job and POSIX
   descendants that call `setsid()`/`setpgid()` remain outside that scope.
+- Version 2 preserves the suite's portable `argv[0]` and does not provide
+  `PATH`. On Linux, programs that reconstruct their own executable from
+  `argv[0]` and `PATH` can therefore fail; CPython `sys.executable` is not
+  guaranteed. A task that must relaunch itself needs an explicit declared
+  mechanism. `/proc/self/exe` is available only within the supported Linux
+  boundary.
 - Version 2 binds and byte-checks an opaque descriptor file. It does not parse
   or instantiate a VM/container snapshot, verify packages or drivers, or prove
   that an external object named by the descriptor exists.
