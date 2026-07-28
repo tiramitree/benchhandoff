@@ -10,6 +10,10 @@ public-CI-tested commit. Every later release must repeat the same exact-commit
 gates. There is no TestPyPI or PyPI publication, supported production line, or
 external-adoption claim.
 
+Version `0.3.0` is currently a candidate, not a tag or Release. Nothing in this
+checklist claims that its CI, release, adoption, compatibility, or performance
+gates have completed.
+
 ## 1. Resolve release blockers
 
 Stop unless every item is complete:
@@ -73,6 +77,29 @@ release will claim. Record the workflow URL, commit SHA, interpreter version,
 passes, failures, errors, and skips. A matrix in YAML is only a proposed plan
 until those jobs complete.
 
+For a version 3 candidate, additionally stop unless:
+
+- a clean synthetic workspace was snapshotted to a start-absent candidate
+  outside `workspace.root`, reviewed, and bound exactly in `suite.toml`;
+- `inspect-workspace`, start, and verify were run with the run directory outside
+  the entire suite tree;
+- workspace drift and failed/quarantined recovery paths were exercised without
+  weakening the registered boundary;
+- reviewers checked manifest relative paths, kinds, sizes, and hashes and raw
+  evidence/lock absolute paths for sensitive metadata; and
+- the release notes state that observations are discrete, cover only
+  `workspace.root`, do not detect every same-device bind mount, and are not a
+  sandbox or hostile-writer boundary.
+- the release notes limit identity to directory topology and ordinary-file
+  primary-stream bytes, excluding permissions, ownership, timestamps, ACLs,
+  xattrs, NTFS alternate streams, sparse layout, and unlisted metadata.
+
+If snapshot publication or re-verification fails, preserve the candidate for
+review. Do not silently delete it or reuse its path. The no-replace quarantine
+claim is limited to Windows, Linux, and macOS with the required native
+primitive; missing support must fail closed. See
+[`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](CLOSED_WORLD_WORKSPACE_INTEGRITY.md).
+
 Also run:
 
 ```bash
@@ -80,7 +107,8 @@ python tools/verify_license_state.py --require-final
 python tools/verify_external_evidence.py
 python tools/verify_public_privacy.py
 PYTHONPATH=src python -m unittest discover -s tests -v
-python -m compileall -q src tests tools benchmarks examples
+python -m compileall -q src tests tools benchmarks \
+  examples/recovery_pipeline examples/context_bound
 evidence_parent="$(mktemp -d)"
 evidence_root="$evidence_parent/package"
 expected_commit="$(git rev-parse HEAD)"

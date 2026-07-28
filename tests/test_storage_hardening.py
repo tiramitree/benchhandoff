@@ -323,6 +323,38 @@ class StorageHardeningTests(unittest.TestCase):
             self.assertTrue(source.is_file())
             self.assertFalse(destination.exists())
 
+    def test_move_never_overwrites_destination_that_appears_during_race(self) -> None:
+        with self.temporary_root() as temporary:
+            root = Path(temporary)
+            source = root / "source.bin"
+            destination = root / "destination.bin"
+            source.write_bytes(b"source evidence")
+
+            real_rename = storage._rename_no_replace
+
+            def competing_rename(
+                source_path: Path,
+                destination_path: Path,
+                *,
+                label: str,
+            ) -> None:
+                destination_path.write_bytes(b"competing evidence")
+                real_rename(source_path, destination_path, label=label)
+
+            with (
+                mock.patch.object(
+                    storage,
+                    "_rename_no_replace",
+                    side_effect=competing_rename,
+                ),
+                self.assertRaisesRegex(BoundaryError, "destination appeared"),
+            ):
+                storage.move_regular_same_filesystem(
+                    source, destination, label="quarantine artifact"
+                )
+            self.assertEqual(source.read_bytes(), b"source evidence")
+            self.assertEqual(destination.read_bytes(), b"competing evidence")
+
     def test_move_regular_same_filesystem_rejects_post_move_identity_drift(self) -> None:
         with self.temporary_root() as temporary:
             root = Path(temporary)

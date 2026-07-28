@@ -3,6 +3,61 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
+## 0.3.0 - Unreleased
+
+This is a candidate change set. No tag, GitHub Release, public-CI result,
+external adoption, performance result, or support commitment is asserted here.
+
+### Added
+
+- Strict suite/evidence schema version 3 with one dedicated `workspace.root`, a
+  canonical reviewed manifest outside that root, and version 1/version 2 read
+  and execution compatibility.
+- `snapshot-workspace`, which publishes a start-absent manifest candidate for
+  human review, and `inspect-workspace`, which validates a version 3 suite
+  without launching a task.
+- Bounded, double-scanned workspace observations bind directory topology and
+  ordinary-file primary-stream bytes under `workspace.root`. Version 3 rejects
+  links, reparse points, hard-linked files, cross-device entries, unsupported
+  entry types, path aliases, and manifest or topology drift.
+- Derivable `workspace_before`, terminal `workspace_after`, and, after
+  quarantine recovery, `workspace_recovered` attempt summaries. The final
+  workspace binding is copied into `bundle.json` and freshly checked by
+  `verify`.
+- A second cooperative writer lock keyed to the workspace root, preventing two
+  BenchHandoff mutation entrypoints that use different run directories from
+  concurrently operating on the same reviewed workspace.
+- Atomic no-replace quarantine moves on Windows, Linux, and macOS. Unsupported
+  platforms or unavailable native no-replace primitives fail closed.
+
+### Boundaries
+
+- Workspace integrity is checked at discrete preflight, launch, post-exit,
+  recovery, bundle, and verification points. It is not continuous monitoring,
+  a sandbox, or a hostile-writer boundary.
+- Only bounded directory topology and ordinary-file primary-stream bytes under
+  `workspace.root` are observed. Writes elsewhere, network activity, and other
+  side effects are neither prevented nor recorded. A same-device bind mount may
+  not be detected by device-id checks.
+- The workspace identity covers directory topology and ordinary-file
+  primary-stream bytes, not mode, owner, timestamps, ACLs, extended attributes,
+  NTFS alternate data streams, sparse-file layout, or unlisted metadata.
+- A snapshot manifest discloses relative paths, entry kinds, file sizes, and
+  content hashes. Raw run evidence and writer-lock records can still disclose
+  absolute local paths.
+- A failed snapshot publication or re-verification retains the candidate path
+  for review; it does not silently remove bytes whose ownership may be
+  ambiguous.
+- A hard runner crash may leave a `running` attempt without a terminal
+  workspace observation. Recovery records the then-current tree before
+  quarantine; it does not reconstruct or claim the exact crash-time tree.
+- Schema versions 1 and 2 retain their original evidence shapes and execution
+  behavior. Version 3 is opt-in and does not retroactively strengthen old runs.
+
+See
+[`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](docs/CLOSED_WORLD_WORKSPACE_INTEGRITY.md)
+for the detailed protocol and limits.
+
 ## 0.2.0 - 2026-07-28
 
 ### Added

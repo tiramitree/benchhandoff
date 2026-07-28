@@ -17,6 +17,7 @@ if str(SOURCE_ROOT) not in sys.path:
 
 import benchhandoff.cli as cli
 import benchhandoff.engine as engine
+import benchhandoff.model as model_module
 from benchhandoff.errors import BoundaryError, ConfigurationError, EvidenceError
 from benchhandoff.model import load_suite
 from benchhandoff.storage import (
@@ -156,10 +157,13 @@ class AuditRegressionTests(unittest.TestCase):
         self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_start_api_and_cli_normalize_operational_os_errors(self) -> None:
-        with mock.patch.object(
-            engine,
-            "_start_run_checked",
-            side_effect=PermissionError("synthetic access denial"),
+        with (
+            mock.patch.object(engine, "load_suite", return_value=SimpleNamespace(version=1)),
+            mock.patch.object(
+                engine,
+                "_start_run_checked",
+                side_effect=PermissionError("synthetic access denial"),
+            ),
         ):
             with self.assertRaisesRegex(EvidenceError, "run could not be safely started"):
                 engine.start_run("suite.toml", "run")
@@ -447,6 +451,80 @@ class AuditRegressionTests(unittest.TestCase):
             )
             with self.assertRaises(ConfigurationError):
                 load_suite(suite)
+
+    def test_start_revalidates_suite_after_workspace_lock_boundary(self) -> None:
+        with WorkspaceTemporaryDirectory(prefix="benchhandoff-suite-lock-") as temporary:
+            root = Path(temporary)
+            suite = root / "suite.toml"
+            suite.write_text(
+                "\n".join(
+                    [
+                        "version = 1",
+                        'name = "locked-suite"',
+                        "",
+                        "[[task]]",
+                        'id = "one"',
+                        'argv = ["python", "-c", "from pathlib import Path; '
+                        "Path('result.txt').write_text('ran', encoding='utf-8')\"]",
+                        "inputs = []",
+                        'outputs = ["result.txt"]',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            run = root / "run"
+
+            def change_after_load(_suite: object) -> None:
+                suite.write_text(
+                    suite.read_text(encoding="utf-8") + "\n# changed after load\n",
+                    encoding="utf-8",
+                )
+                return None
+
+            with (
+                mock.patch.object(
+                    engine,
+                    "_acquire_workspace_writer_lock",
+                    side_effect=change_after_load,
+                ),
+                self.assertRaisesRegex(EvidenceError, "suite.toml identity drifted"),
+            ):
+                engine.start_run(suite, run)
+
+            self.assertFalse(run.exists())
+            self.assertFalse((root / "result.txt").exists())
+
+    def test_suite_normalization_and_identity_come_from_the_same_bytes(self) -> None:
+        with WorkspaceTemporaryDirectory(prefix="benchhandoff-suite-race-") as temporary:
+            root = Path(temporary)
+            suite = root / "suite.toml"
+            suite.write_text(
+                "\n".join(
+                    [
+                        "version = 1",
+                        'name = "stable-suite"',
+                        "",
+                        "[[task]]",
+                        'id = "one"',
+                        'argv = ["python", "-c", "pass"]',
+                        "inputs = []",
+                        'outputs = ["result.txt"]',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            original = suite.read_bytes()
+            replacement = original.replace(b"stable-suite", b"changed-suite")
+            with mock.patch.object(
+                model_module,
+                "read_regular_bytes",
+                side_effect=(original, replacement),
+            ):
+                with self.assertRaisesRegex(
+                    ConfigurationError,
+                    "changed identity while it was being loaded",
+                ):
+                    load_suite(suite)
 
 
 if __name__ == "__main__":

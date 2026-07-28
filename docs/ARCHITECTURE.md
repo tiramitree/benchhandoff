@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-suite.toml + declared seed files
+suite.toml + declared seed files + optional v3 workspace manifest
                |
                v
         strict preflight
@@ -9,8 +9,9 @@ suite.toml + declared seed files
         - regular files
         - SHA-256 identities
         - outputs absent
-        - v2 descriptor/executable
+        - v2/v3 descriptor/executable
           and launch-policy identity
+        - v3 complete workspace baseline
                |
                v
            plan.json
@@ -21,12 +22,13 @@ suite.toml + declared seed files
                v
        process launch (shell=False)
        v1: direct child
-       v2: Job/process group
+       v2/v3: Job/process group
+       v3: discrete workspace checks
           |               |
        non-zero         zero
           |               |
           v               v
-     failed state    v2 scope-empty gate
+     failed state    v2/v3 scope-empty gate
      no bundle        + completed state
           |               |
           v               |
@@ -46,9 +48,11 @@ events.jsonl + stdout/stderr + quarantine
        same-CLI fresh re-hash
 ```
 
-The suite tree contains task inputs and outputs. The run tree contains ledger
-evidence and must be a separate directory tree so a task output cannot overwrite
-its own plan or state.
+For versions 1 and 2, the suite tree contains task inputs and outputs. Version 3
+uses one dedicated `workspace.root` inside the suite tree as the task root and
+keeps its reviewed manifest outside that workspace. In every version, the run
+tree contains ledger evidence and must be outside and separate from the suite
+tree so a task output cannot overwrite its own plan or state.
 
 ## Durable records
 
@@ -99,6 +103,51 @@ enumerates the persisted process group and refuses an active or unknown group.
 The Linux group can be escaped by a cooperating descendant, so this is a
 quiescence gate rather than security containment. The complete boundary is in
 [`EXECUTION_CONTEXT_AND_PROCESS_SCOPE.md`](EXECUTION_CONTEXT_AND_PROCESS_SCOPE.md).
+
+## Version 3 closed-world workspace integrity
+
+Version 3 inherits the version 2 launch context and quiescence gate. Its task
+root changes from the suite directory to the dedicated `workspace.root`. The
+suite binds a canonical manifest outside that root by digest and size. A
+preflight double-scan must exactly match that reviewed baseline before the run
+directory is created.
+
+The workspace observer binds directory topology and ordinary-file primary-stream
+bytes only under `workspace.root`, rejecting links, reparse points, hard links,
+cross-device entries, unsupported types, aliases, and limit violations.
+Device-id comparison cannot identify a same-device bind mount, and no directory
+outside the root is inspected. Mode, owner, timestamps, ACLs, extended
+attributes, NTFS alternate data streams, sparse-file layout, and unlisted
+metadata are not bound.
+
+For each task the engine derives the only legal tree from the reviewed baseline
+plus earlier sealed outputs. It records `workspace_before`, launches with the
+version 2 process controls, confirms scope quiescence, and records
+`workspace_after` before accepting outputs. The same derivation is checked on
+run load, read-only inspection, resume, bundle creation, and final verification.
+These are discrete checkpoints, not continuous monitoring, filesystem access
+control, a sandbox, or a hostile-writer boundary.
+
+A normal terminal path observes after child exit. If the runner crashes while
+an attempt remains durably `running`, there may be no terminal observation.
+Recovery then observes the current tree immediately before quarantine, records
+that recovery-time view, atomically moves regular partial outputs, and records
+the clean `workspace_recovered` view. It cannot reconstruct the exact
+crash-time tree. Existing observations must match; recovery never rewrites a
+contradiction.
+
+Quarantine publication uses an atomic no-replace rename: Windows `os.rename`,
+Linux `renameat2(RENAME_NOREPLACE)`, or macOS
+`renamex_np(RENAME_EXCL)`. If the platform is different or the native primitive
+is unavailable, recovery fails closed. macOS is not otherwise a supported task
+execution target.
+
+`snapshot-workspace` exclusively creates a start-absent manifest candidate and
+re-verifies it. A failure retains the candidate for review instead of deleting
+possibly raced or partially written bytes. The manifest contains relative
+paths, entry kinds, sizes, and content hashes; raw run records and locks may
+also contain absolute host paths. See
+[`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](CLOSED_WORLD_WORKSPACE_INTEGRITY.md).
 
 ## Cooperative writer serialization and orphan recovery
 

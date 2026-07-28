@@ -1,0 +1,21 @@
+version = 3
+name = "closed-world-workspace-example"
+
+[context]
+path = "context.json"
+media_type = "application/vnd.benchhandoff.example-context+json"
+digest = "sha256:7fee25e07d0a2e9e6f5aa52779fb8ee65aaa1c463e2792c789329c6bdd8ec2e8"
+size = 93
+
+[workspace]
+root = "workspace"
+manifest = "workspace.snapshot.json"
+digest = "sha256:0af1b7de6edd724fb957146e4615d8585c0e397a7788ecbfccd23501a7f6911a"
+size = 483
+policy = "closed-world-primary-stream-v1"
+
+[[task]]
+id = "uppercase"
+argv = ["python", "worker.py"]
+inputs = ["context.json", "input.txt", "worker.py"]
+outputs = ["result.txt"]

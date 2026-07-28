@@ -1,9 +1,12 @@
-# Evidence Format v1 and v2
+# Evidence Format v1, v2, and v3
 
 All JSON files use strict UTF-8, sorted object keys, compact separators, finite
 JSON numbers, and a trailing newline. Hashes are lowercase SHA-256 hex digests;
 sizes are byte counts. Reader and writer both enforce a 16 MiB file limit,
 maximum depth 64, and maximum 100,000 JSON nodes.
+The separate version 3 workspace manifest is bounded to 4 MiB, 10,000 entries,
+32 path components, 1 GiB per ordinary file, and 4 GiB total ordinary-file
+bytes. Its exact canonical schema is described below.
 
 ## `plan.json`
 
@@ -31,6 +34,45 @@ Schema version 2 additionally requires:
 The executable path itself is not stored in that nested record; only its
 normalized-path SHA-256 and UTF-8 length are. Existing absolute suite/run paths
 elsewhere in the plan remain unchanged and potentially identifying.
+
+Schema version 3 retains every version 2 field and additionally requires:
+
+- `suite.workspace`, containing portable `root` and outside-root `manifest`
+  paths, the manifest's `sha256:` digest and byte size, and the exact
+  `closed-world-primary-stream-v1` policy;
+- `workspace`, containing the manifest identity, policy, and canonical baseline
+  tree summary; and
+- version 3 seed inputs and executable paths interpreted relative to
+  `workspace.root`, while the suite and manifest remain suite-relative.
+
+The baseline summary contains directory/file counts, total file bytes, and one
+SHA-256 tree digest. Individual workspace paths remain in the separate reviewed
+manifest rather than being copied into the summary.
+
+## `workspace.snapshot.json` (version 3 suite input)
+
+The manifest is canonical strict JSON with exactly:
+
+- `schema_version: 1`;
+- `kind: "benchhandoff-workspace-snapshot"`;
+- `policy: "closed-world-primary-stream-v1"`; and
+- `entries`, sorted by canonical UTF-8 relative path.
+
+A directory entry has only `path` and `kind: "directory"`. An ordinary-file
+entry additionally has lowercase `sha256` and integer `size`. Parent directories
+must be explicit; duplicate, aliasing, noncanonical, linked, reparse,
+hard-linked, cross-device, excessive, or unsupported entries are rejected.
+The manifest binds directory topology and ordinary-file primary-stream byte
+content. It has no fields for mode, owner, timestamps, ACLs, extended
+attributes, NTFS alternate data streams, sparse-file layout, or other unlisted
+metadata, so those properties are outside the evidence claim.
+
+`snapshot-workspace` creates a start-absent candidate outside `workspace.root`
+with exclusive publication, then re-verifies its parent, object identity, and
+bytes. If write, flush, close, or re-verification fails, the candidate is
+retained for review rather than silently deleted. The manifest omits the
+absolute root but exposes relative names, topology, kinds, sizes, and content
+fingerprints; it is not automatically safe to publish.
 
 ## `state.json`
 
@@ -66,6 +108,21 @@ terminal attempt with a child must have `empty_confirmed=true`; a safe failure
 before an identified child must record that no scope was created or that a
 partially created launch was cleaned.
 
+Each version 3 attempt also records a canonical `workspace_before` summary.
+A terminal attempt records `workspace_after`. If recovery quarantines partial
+outputs, the same attempt must contain both `quarantined_outputs` and
+`workspace_recovered`; neither field is legal without the other. Every summary
+is re-derived from the reviewed baseline and sealed or quarantined output
+identities while loading evidence.
+
+In an ordinary terminal path, `workspace_after` is the post-exit observation
+after process-scope quiescence. A hard runner crash can leave an attempt
+durably `running` without that observation. Recovery then takes the current
+workspace observation immediately before quarantine and records it as the
+recovery-time `workspace_after`; it does not claim that this was the exact tree
+at crash time. A previously durable observation must still match and is never
+silently replaced.
+
 The state binds the plan hash and the event-log hash, byte size, and record
 count. It also carries at most one pending event intent. State is published with
 a same-directory temporary file, file flush, and atomic replace.
@@ -93,9 +150,12 @@ when work remains. That view contains the task status and next attempt number,
 verified input identities, unverified output presence or identity, and the
 presence or identity of each deterministic quarantine candidate.
 
-For version 2, the next-task view also carries the freshly recomputed execution
-context. Context drift therefore changes or blocks the decision before resume
-mutation.
+For versions 2 and 3, the next-task view also carries the freshly recomputed
+execution context. Context drift therefore changes or blocks the decision
+before resume mutation. A version 3 decision additionally carries the current
+workspace summary. It must equal the summary derivable for the durable attempt
+state; new or changed workspace content refuses inspection rather than being
+treated as an approved next-task input.
 
 `decision_sha256` is the SHA-256 of the same canonical object with that one
 self-referential field omitted. The decision is emitted to stdout and is not
@@ -132,6 +192,12 @@ decision and tombstone identities. The result is CLI output, not a run record.
 The tombstone itself remains the original lock record and is not included in
 `bundle.json`.
 
+Version 3 mutation entrypoints also acquire a lock using `workspace.root` as
+the lock target, so different run directories cannot cooperatively mutate the
+same workspace concurrently. Lock records and recovery decisions can contain
+normalized absolute run or workspace paths and owner PIDs; they are raw local
+evidence, not privacy-filtered publication artifacts.
+
 ## `bundle.json`
 
 The one-time bundle contains:
@@ -142,13 +208,17 @@ The one-time bundle contains:
 - every evidence-artifact identity for `plan.json`, `state.json`,
   `events.jsonl`, `logs/**`, and `quarantine/**`.
 
-Version 2 also copies the immutable plan execution-context object into the
-bundle and requires exact equality during verification. Version 1 bundles
-retain their original exact key set and remain readable.
+Versions 2 and 3 also copy the immutable plan execution-context object into the
+bundle and require exact equality during verification. Version 3 additionally
+copies the workspace binding and `final_workspace` summary; `verify` performs a
+fresh workspace observation and requires exact equality. Version 1 and 2
+bundles retain their original exact key sets and remain readable.
 
 `verify` requires the recorded artifact file set to match exactly and separately
 requires the run-root topology to contain only the three core files, the two
 evidence directories, and `bundle.json`. `bundle.json` does not hash itself.
 
 These are local integrity bindings, not a signature or trusted timestamp. See
-[`LIMITATIONS.md`](../LIMITATIONS.md) for the threat and crash boundary.
+[`LIMITATIONS.md`](../LIMITATIONS.md) for the threat and crash boundary and
+[`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](CLOSED_WORLD_WORKSPACE_INTEGRITY.md)
+for the version 3 protocol.

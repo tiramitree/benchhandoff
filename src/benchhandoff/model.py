@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import tomllib
 from dataclasses import dataclass
@@ -10,18 +11,20 @@ from typing import Any
 
 from benchhandoff.errors import BoundaryError, ConfigurationError
 from benchhandoff.storage import (
-    file_identity,
     normalize_relative_file,
     read_regular_bytes,
     windows_component_key,
     windows_path_key,
 )
+from benchhandoff.workspace import MAX_WORKSPACE_MANIFEST_BYTES, WORKSPACE_POLICY
 
 _TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 _DESCRIPTOR_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ROOT_KEYS_V1 = {"version", "name", "task"}
 _ROOT_KEYS_V2 = {"version", "name", "context", "task"}
+_ROOT_KEYS_V3 = {"version", "name", "context", "workspace", "task"}
 _CONTEXT_KEYS = {"path", "media_type", "digest", "size"}
+_WORKSPACE_KEYS = {"root", "manifest", "digest", "size", "policy"}
 _TASK_KEYS = {"id", "argv", "inputs", "outputs"}
 MAX_SUITE_BYTES = 256 * 1024
 MAX_SUITE_TASKS = 64
@@ -55,6 +58,26 @@ class ContextDescriptor:
 
 
 @dataclass(frozen=True)
+class WorkspaceDescriptor:
+    """One dedicated reviewed workspace and its canonical manifest."""
+
+    root: str
+    manifest: str
+    digest: str
+    size: int
+    policy: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "root": self.root,
+            "manifest": self.manifest,
+            "digest": self.digest,
+            "size": self.size,
+            "policy": self.policy,
+        }
+
+
+@dataclass(frozen=True)
 class TaskSpec:
     """One sequential subprocess and its declared file boundary."""
 
@@ -84,6 +107,7 @@ class SuiteSpec:
     seed_inputs: tuple[str, ...]
     identity: dict[str, Any]
     context: ContextDescriptor | None
+    workspace: WorkspaceDescriptor | None
 
     def normalized(self) -> dict[str, Any]:
         value = {
@@ -93,6 +117,8 @@ class SuiteSpec:
         }
         if self.context is not None:
             value["context"] = self.context.as_dict()
+        if self.workspace is not None:
+            value["workspace"] = self.workspace.as_dict()
         return value
 
 
@@ -135,6 +161,10 @@ def load_suite(path: Path | str) -> SuiteSpec:
 
     suite_path = Path(path).absolute()
     raw = read_regular_bytes(suite_path, label="suite.toml", max_bytes=MAX_SUITE_BYTES)
+    raw_identity = {
+        "sha256": hashlib.sha256(raw).hexdigest(),
+        "size": len(raw),
+    }
     try:
         parsed = tomllib.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
@@ -142,11 +172,15 @@ def load_suite(path: Path | str) -> SuiteSpec:
     if not isinstance(parsed, dict):
         raise ConfigurationError("suite.toml must contain a table")
     version = parsed.get("version")
-    if not isinstance(version, int) or isinstance(version, bool) or version not in {1, 2}:
-        raise ConfigurationError("suite.toml version must be exactly 1 or 2")
+    if (
+        not isinstance(version, int)
+        or isinstance(version, bool)
+        or version not in {1, 2, 3}
+    ):
+        raise ConfigurationError("suite.toml version must be exactly 1, 2, or 3")
     _only_keys(
         parsed,
-        _ROOT_KEYS_V1 if version == 1 else _ROOT_KEYS_V2,
+        {1: _ROOT_KEYS_V1, 2: _ROOT_KEYS_V2, 3: _ROOT_KEYS_V3}[version],
         label="suite.toml",
     )
     name = parsed.get("name")
@@ -158,10 +192,12 @@ def load_suite(path: Path | str) -> SuiteSpec:
         )
 
     context: ContextDescriptor | None = None
-    if version == 2:
+    if version >= 2:
         raw_context = parsed.get("context")
         if not isinstance(raw_context, dict):
-            raise ConfigurationError("suite.toml v2 must define one [context] table")
+            raise ConfigurationError(
+                f"suite.toml v{version} must define one [context] table"
+            )
         _only_keys(raw_context, _CONTEXT_KEYS, label="suite.toml context")
         raw_context_path = raw_context.get("path")
         if not isinstance(raw_context_path, str):
@@ -205,6 +241,66 @@ def load_suite(path: Path | str) -> SuiteSpec:
             media_type=media_type,
             digest=digest,
             size=size,
+        )
+    workspace: WorkspaceDescriptor | None = None
+    if version == 3:
+        raw_workspace = parsed.get("workspace")
+        if not isinstance(raw_workspace, dict):
+            raise ConfigurationError(
+                "suite.toml v3 must define one [workspace] table"
+            )
+        _only_keys(raw_workspace, _WORKSPACE_KEYS, label="suite.toml workspace")
+        raw_workspace_root = raw_workspace.get("root")
+        raw_manifest_path = raw_workspace.get("manifest")
+        if not isinstance(raw_workspace_root, str):
+            raise ConfigurationError(
+                "suite.toml workspace.root must be a portable relative directory"
+            )
+        if not isinstance(raw_manifest_path, str):
+            raise ConfigurationError(
+                "suite.toml workspace.manifest must be a portable relative file"
+            )
+        try:
+            workspace_root = normalize_relative_file(
+                raw_workspace_root,
+                label="suite.toml workspace.root",
+            )
+            manifest_path = normalize_relative_file(
+                raw_manifest_path,
+                label="suite.toml workspace.manifest",
+            )
+        except BoundaryError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        workspace_digest = raw_workspace.get("digest")
+        if (
+            not isinstance(workspace_digest, str)
+            or not _DESCRIPTOR_DIGEST.fullmatch(workspace_digest)
+        ):
+            raise ConfigurationError(
+                "suite.toml workspace.digest must be lowercase sha256:<64 hex>"
+            )
+        workspace_size = raw_workspace.get("size")
+        if (
+            not isinstance(workspace_size, int)
+            or isinstance(workspace_size, bool)
+            or workspace_size < 0
+            or workspace_size > MAX_WORKSPACE_MANIFEST_BYTES
+        ):
+            raise ConfigurationError(
+                "suite.toml workspace.size must be an integer from 0 to "
+                f"{MAX_WORKSPACE_MANIFEST_BYTES}"
+            )
+        policy = raw_workspace.get("policy")
+        if policy != WORKSPACE_POLICY:
+            raise ConfigurationError(
+                f"suite.toml workspace.policy must be exactly {WORKSPACE_POLICY!r}"
+            )
+        workspace = WorkspaceDescriptor(
+            root=workspace_root,
+            manifest=manifest_path,
+            digest=workspace_digest,
+            size=workspace_size,
+            policy=policy,
         )
 
     raw_tasks = parsed.get("task")
@@ -252,7 +348,7 @@ def load_suite(path: Path | str) -> SuiteSpec:
         argv = _string_list(raw_task.get("argv"), label=f"{label}.argv")
         if not argv or not argv[0]:
             raise ConfigurationError(f"{label}.argv must contain a non-empty executable")
-        if version == 2:
+        if version >= 2:
             try:
                 normalize_relative_file(
                     argv[0],
@@ -260,8 +356,8 @@ def load_suite(path: Path | str) -> SuiteSpec:
                 )
             except BoundaryError as exc:
                 raise ConfigurationError(
-                    "suite.toml v2 executable must be a portable bare name "
-                    "or suite-relative path"
+                    f"suite.toml v{version} executable must be a portable bare name "
+                    "or task-root-relative path"
                 ) from exc
         if len(argv) > MAX_TASK_ARGUMENTS:
             raise ConfigurationError(
@@ -346,12 +442,38 @@ def load_suite(path: Path | str) -> SuiteSpec:
 
         tasks.append(TaskSpec(task_id, argv, inputs, outputs))
 
-    if context is not None and context.path not in observed_seed_inputs:
+    if version >= 2 and context is not None and context.path not in observed_seed_inputs:
         raise ConfigurationError(
             "suite.toml context.path must be declared as a seed task input"
         )
+    if version == 3:
+        if context is None or workspace is None:
+            raise ConfigurationError(
+                "suite.toml v3 requires context and workspace descriptors"
+            )
+        root_key = windows_path_key(
+            workspace.root,
+            label="suite.toml workspace.root",
+        )
+        manifest_key = windows_path_key(
+            workspace.manifest,
+            label="suite.toml workspace.manifest",
+        )
+        if manifest_key[: len(root_key)] == root_key:
+            raise ConfigurationError(
+                "suite.toml workspace.manifest must be outside workspace.root"
+            )
 
     resolved_path = suite_path.resolve(strict=True)
+    current_raw = read_regular_bytes(
+        resolved_path,
+        label="suite.toml revalidation",
+        max_bytes=MAX_SUITE_BYTES,
+    )
+    if current_raw != raw:
+        raise ConfigurationError(
+            "suite.toml changed identity while it was being loaded"
+        )
     return SuiteSpec(
         path=resolved_path,
         root=resolved_path.parent,
@@ -359,6 +481,7 @@ def load_suite(path: Path | str) -> SuiteSpec:
         version=version,
         tasks=tuple(tasks),
         seed_inputs=tuple(seed_order),
-        identity=file_identity(resolved_path, label="suite.toml"),
+        identity=raw_identity,
         context=context,
+        workspace=workspace,
     )

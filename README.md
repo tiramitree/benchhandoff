@@ -1,4 +1,4 @@
-# BenchHandoff v0.2
+# BenchHandoff v0.3.0 candidate
 
 [![CI](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
 
@@ -35,6 +35,46 @@ forks, and maintainer-authored examples are not external-adoption evidence.
 BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
 scheduler, sandbox, cryptographic attestation service, or guarantee of full
 reproducibility.
+
+## What the v0.3.0 candidate adds
+
+Suite schema version 3 keeps the version 2 execution-context and process-family
+controls, then adds a reviewed closed-world manifest for one dedicated
+`workspace.root`. Before a run is created, before every task launch, after the
+leader and its in-scope process family stop, during recovery, before bundling,
+and during `verify`, BenchHandoff compares the bounded directory topology and
+ordinary-file primary-stream bytes under that root with the state derivable
+from the manifest and already sealed outputs. Missing, extra, changed, linked,
+reparse, hard-linked, cross-device, or unsupported entries fail closed.
+The bound state is directory topology plus ordinary-file primary-stream bytes.
+It does not bind mode, owner, timestamps, ACLs, extended attributes, NTFS
+alternate data streams, sparse-file layout, or other unlisted metadata.
+
+These are discrete observations, not continuous monitoring. Version 3 neither
+prevents a child from writing outside `workspace.root` nor observes such writes.
+It is not a sandbox or hostile-writer boundary. In particular, a same-device
+bind mount can retain the same device identifier and is not detected as a
+cross-device boundary.
+
+`snapshot-workspace` writes a new review candidate outside `workspace.root`;
+the destination must start absent. If publication or re-verification fails, the
+candidate is intentionally retained for review rather than silently deleted.
+The canonical manifest contains relative paths, entry kinds, file sizes, and
+SHA-256 content identities, so it can reveal project structure, filenames,
+sizes, and content fingerprints. Raw run evidence and writer-lock records can
+still contain absolute local paths.
+
+Recovery uses atomic no-replace quarantine moves on Windows, Linux, and macOS;
+an unavailable primitive or any other platform fails closed. macOS remains
+unsupported for child execution. A hard runner crash can leave a durable
+`running` attempt without a terminal observation; recovery then records a new
+recovery-time workspace observation before quarantine. That observation cannot
+be interpreted as the exact tree at crash time.
+
+Versions 1 and 2 retain their existing parsers, evidence shapes, task roots,
+and execution behavior. Version 3 is opt-in and strict. See
+[Closed-world workspace integrity](docs/CLOSED_WORLD_WORKSPACE_INTEGRITY.md)
+for the protocol and claim boundary.
 
 ## What v0.2 adds
 
@@ -88,12 +128,15 @@ guarantee. See [LIMITATIONS.md](LIMITATIONS.md).
 
 ## Requirements and implemented execution targets
 
-- Python 3.11 or newer. Public CI covers CPython 3.11 through 3.14.
+- Python 3.11 or newer. The released v0.2.0 public CI covered CPython 3.11
+  through 3.14; that historical result is not validation of this candidate.
 - Windows or Linux for child execution. Linux requires `/proc` so the runner can
   bind a PID to a stable process-start identity and inspect version 2 process
   groups.
 - No third-party runtime packages.
-- A suite directory and a separate run-evidence directory.
+- A suite directory and a separate run-evidence directory. Version 3 also
+  requires one dedicated `workspace.root` and a reviewed manifest outside that
+  root.
 - The suite, every output's existing parent, and the run/quarantine directory
   must be on the same filesystem so quarantine moves cannot cross devices.
 
@@ -104,7 +147,11 @@ source needs no install.
 
 ## Validation status
 
-The v0.2.0 release commit
+The published validation facts below belong to v0.2.0 and its named commits.
+They do not assert that the v0.3.0 candidate has passed public CI, been tagged,
+or been released.
+
+For historical reference, the v0.2.0 release commit
 `pre-rewrite-commit-retired` completed all ten jobs in public
 main-branch
 [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
@@ -298,6 +345,44 @@ invokes `python` by name. A success-only example remains under `examples/basic`.
 
 ## Suite format
 
+Version 3 runs every task relative to one dedicated workspace and binds a
+canonical manifest stored outside that workspace. Generate a new candidate with
+`snapshot-workspace`, review its exact bytes and metadata disclosure, then put
+its SHA-256 and byte size in the suite:
+
+```toml
+version = 3
+name = "closed-world-copy"
+
+[context]
+path = "context.json"
+media_type = "application/vnd.example.context.v1+json"
+digest = "sha256:<digest of workspace/context.json>"
+size = 80
+
+[workspace]
+root = "workspace"
+manifest = "workspace.snapshot.json"
+digest = "sha256:<digest of workspace.snapshot.json>"
+size = 512
+policy = "closed-world-primary-stream-v1"
+
+[[task]]
+id = "copy-upper"
+argv = ["python", "copy_upper.py", "input.txt", "output.txt"]
+inputs = ["context.json", "copy_upper.py", "input.txt"]
+outputs = ["output.txt"]
+```
+
+The manifest must start as a snapshot of the bounded directory topology and
+ordinary-file primary streams under `workspace`, with every declared output
+absent. Both task paths and a relative executable path are resolved against
+`workspace.root`; the manifest path is resolved against the suite directory
+and must remain outside the workspace.
+Use `inspect-workspace` for a launch-free validation. The complete workflow and
+bounds are in
+[`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](docs/CLOSED_WORLD_WORKSPACE_INTEGRITY.md).
+
 Version 2 adds a byte-verified context descriptor. Its path must also be a seed
 task input:
 
@@ -318,8 +403,8 @@ inputs = ["context.json", "copy_upper.py", "input.txt"]
 outputs = ["output.txt"]
 ```
 
-The executable must be a portable bare name or suite-relative path; version 2
-rejects an absolute `argv[0]`. A runnable synthetic fixture is under
+The executable must be a portable bare name or suite-relative path; versions 2
+and 3 reject an absolute `argv[0]`. A runnable version 2 fixture is under
 [`examples/context_bound`](examples/context_bound).
 
 Version 1 remains readable and executable with its original evidence shape:
@@ -352,9 +437,9 @@ All commands receive:
 - `BENCHHANDOFF_TASK_ID`
 - `BENCHHANDOFF_ATTEMPT`
 
-Version 1 additionally inherits the caller environment. Version 2 does not: it
-passes only these control variables plus hashed-and-bound `SystemRoot` on
-Windows. In particular it does not pass `PATH`, tokens, user-home variables, or
+Version 1 additionally inherits the caller environment. Versions 2 and 3 do
+not: they pass only these control variables plus hashed-and-bound `SystemRoot` on
+Windows. In particular they do not pass `PATH`, tokens, user-home variables, or
 arbitrary caller configuration.
 
 Declare scripts, configs, datasets, and other material dependencies as inputs
@@ -550,6 +635,7 @@ review, deduplication, retraction, and validator boundary.
 - [Evidence format](docs/EVIDENCE_FORMAT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Version 2 execution context and process scope](docs/EXECUTION_CONTEXT_AND_PROCESS_SCOPE.md)
+- [Version 3 closed-world workspace integrity](docs/CLOSED_WORLD_WORKSPACE_INTEGRITY.md)
 - [Recovery example](examples/recovery_pipeline/README.md)
 - [Engineering case study](docs/ENGINEERING_CASE_STUDY.md)
 - [External evidence ledger](docs/EXTERNAL_EVIDENCE.md)

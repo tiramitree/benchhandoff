@@ -49,6 +49,37 @@ termination and residual-group refusal after a hard runner exit. A green result
 supports only those synthetic operating-system boundaries; it is not a sandbox,
 production reliability rate, or external reproduction.
 
+## Validate a version 3 workspace
+
+Use a fresh copy of the synthetic version 3 suite. Keep the run directory
+outside the complete suite tree. Snapshot the clean workspace to a new path
+outside `workspace.root`, review the manifest, bind its digest and size in
+`suite.toml`, then run:
+
+```bash
+PYTHONPATH=src python -m benchhandoff inspect-workspace path/to/suite.toml
+PYTHONPATH=src python -m benchhandoff start path/to/suite.toml \
+  --run-dir /separate/path/to/run
+PYTHONPATH=src python -m benchhandoff verify /separate/path/to/run
+```
+
+Repeat `verify` after adding or changing one workspace entry and require a
+failure; do not cite the deliberately drifted tree as completed evidence.
+These commands exercise discrete bounded topology-and-primary-stream
+observations only. They do not prove continuous monitoring, sandboxing,
+hostile-writer resistance, detection of a same-device bind mount, or control
+of writes outside `workspace.root`.
+The comparison binds directory topology and ordinary-file primary-stream bytes,
+not mode, owner, timestamps, ACLs, extended attributes, NTFS alternate data
+streams, sparse-file layout, or other metadata.
+
+Review the snapshot separately: relative paths, kinds, sizes, and hashes can be
+sensitive metadata, while raw run evidence and lock records may contain
+absolute paths. A failed snapshot can retain its candidate and requires manual
+review before cleanup or retry. Versions 1 and 2 remain valid under their
+original, narrower file boundaries. See
+[`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](CLOSED_WORLD_WORKSPACE_INTEGRITY.md).
+
 ## Reproduce the synthetic records
 
 Use the single package entrypoint from a clean exact checkout. It refuses a

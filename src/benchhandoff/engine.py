@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from benchhandoff.errors import BenchHandoffError, BoundaryError, EvidenceError
 from benchhandoff.model import (
+    MAX_SUITE_BYTES,
     MAX_SUITE_NAME_UTF8_BYTES,
     MAX_SUITE_PATH_REFERENCES,
     MAX_SUITE_TASKS,
@@ -64,9 +65,21 @@ from benchhandoff.storage import (
     resolve_member,
     utc_now,
 )
+from benchhandoff.workspace import (
+    MAX_WORKSPACE_ENTRIES,
+    MAX_WORKSPACE_MANIFEST_BYTES,
+    MAX_WORKSPACE_TOTAL_BYTES,
+    WORKSPACE_POLICY,
+    WorkspaceVerificationError,
+    checked_workspace_root,
+    load_workspace_manifest,
+    prepare_workspace_binding,
+    project_workspace_summary,
+    verify_workspace,
+)
 from benchhandoff.writer_lock import WriterLock
 
-SUPPORTED_SCHEMA_VERSIONS = {1, 2}
+SUPPORTED_SCHEMA_VERSIONS = {1, 2, 3}
 PLAN_FILE = "plan.json"
 STATE_FILE = "state.json"
 BUNDLE_FILE = "bundle.json"
@@ -79,6 +92,10 @@ MAX_EVENT_COUNT = 100_000
 MAX_ATTEMPTS_PER_TASK = 4
 MAX_TOTAL_ATTEMPTS = 256
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+
+
+def _uses_execution_context(schema_version: int) -> bool:
+    return schema_version in {2, 3}
 
 
 @dataclass(frozen=True)
@@ -422,6 +439,239 @@ def _identity_or_raise(
         )
 
 
+def _task_root(suite: SuiteSpec) -> Path:
+    """Return the versioned root for task paths and subprocess cwd."""
+
+    if suite.version != 3:
+        return suite.root
+    if suite.workspace is None:
+        raise EvidenceError("suite version 3 lacks a workspace descriptor")
+    candidate = resolve_member(
+        suite.root,
+        suite.workspace.root,
+        label="workspace root",
+    )
+    return checked_workspace_root(candidate)
+
+
+def _workspace_manifest_path(suite: SuiteSpec) -> Path:
+    if suite.version != 3 or suite.workspace is None:
+        raise EvidenceError("workspace manifest requires suite version 3")
+    return resolve_member(
+        suite.root,
+        suite.workspace.manifest,
+        label="workspace manifest",
+    )
+
+
+def _workspace_manifest_identity(suite: SuiteSpec) -> dict[str, Any]:
+    if suite.workspace is None:
+        raise EvidenceError("suite version 3 lacks a workspace descriptor")
+    return {
+        "sha256": suite.workspace.digest.removeprefix("sha256:"),
+        "size": suite.workspace.size,
+    }
+
+
+def _suite_workspace_binding(suite: SuiteSpec) -> dict[str, Any] | None:
+    if suite.version != 3:
+        return None
+    if suite.workspace is None:
+        raise EvidenceError("suite version 3 lacks a workspace descriptor")
+    prepared = prepare_workspace_binding(
+        _task_root(suite),
+        _workspace_manifest_path(suite),
+        expected_manifest_identity=_workspace_manifest_identity(suite),
+        declared_outputs=[
+            output
+            for task in suite.tasks
+            for output in task.outputs
+        ],
+    )
+    if prepared["manifest"] != _workspace_manifest_identity(suite):
+        raise EvidenceError("workspace manifest identity changed during preflight")
+    return {
+        "policy": suite.workspace.policy,
+        "root": suite.workspace.root,
+        "manifest": {
+            "path": suite.workspace.manifest,
+            **prepared["manifest"],
+        },
+        "baseline": prepared["baseline"],
+    }
+
+
+def _workspace_completed_outputs(
+    context: _RunContext,
+    *,
+    additional_outputs: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, dict[str, Any]]:
+    outputs: dict[str, dict[str, Any]] = {}
+    for task in context.suite.tasks:
+        task_state = context.state["tasks"][task.task_id]
+        if task_state["status"] != "completed":
+            continue
+        for relative, identity in task_state["verified_outputs"].items():
+            outputs[relative] = identity
+    for relative, identity in (additional_outputs or {}).items():
+        if relative in outputs:
+            raise EvidenceError(
+                f"workspace output is already completed: {relative!r}"
+            )
+        outputs[relative] = identity
+    return outputs
+
+
+def _bound_workspace_observation(
+    context: _RunContext,
+    *,
+    phase: str,
+    additional_outputs: dict[str, dict[str, Any]] | None = None,
+    volatile_outputs: tuple[str, ...] | list[str] = (),
+) -> dict[str, Any] | None:
+    if context.plan["schema_version"] != 3:
+        return None
+    binding = context.plan["workspace"]
+    try:
+        return verify_workspace(
+            _task_root(context.suite),
+            _workspace_manifest_path(context.suite),
+            expected_manifest_identity=binding["manifest"],
+            expected_baseline=binding["baseline"],
+            completed_outputs=_workspace_completed_outputs(
+                context,
+                additional_outputs=additional_outputs,
+            ),
+            volatile_outputs=volatile_outputs,
+        )
+    except WorkspaceVerificationError:
+        raise
+    except BenchHandoffError as exc:
+        raise EvidenceError(f"workspace validation failed {phase}: {exc}") from exc
+
+
+def _recovery_workspace_observation(
+    context: _RunContext,
+    task: TaskSpec,
+    latest: dict[str, Any],
+    *,
+    phase: str,
+) -> dict[str, Any] | None:
+    """Accept a deterministic partial quarantine only when it reconstructs history."""
+
+    current = _bound_workspace_observation(
+        context,
+        phase=phase,
+        volatile_outputs=task.outputs,
+    )
+    recorded = latest.get("workspace_after")
+    if recorded is None:
+        if latest.get("status") != "running":
+            raise EvidenceError(
+                "terminal workspace recovery lacks a recorded post-attempt observation"
+            )
+        return current
+
+    binding = context.plan["workspace"]
+    manifest = load_workspace_manifest(
+        _workspace_manifest_path(context.suite),
+        expected_identity=binding["manifest"],
+    )
+    reconstructed_outputs = _workspace_completed_outputs(context)
+    attempt_number = latest["number"]
+    for relative in task.outputs:
+        source = resolve_member(
+            _task_root(context.suite),
+            relative,
+            label=f"recovery source {relative!r}",
+        )
+        artifact = (
+            f"{QUARANTINE_DIRECTORY}/"
+            f"{_quarantine_name(task.task_id, attempt_number, relative)}"
+        )
+        destination = resolve_member(
+            context.run_root,
+            artifact,
+            label=f"recovery destination for {relative!r}",
+        )
+        source_exists = os.path.lexists(source)
+        destination_exists = os.path.lexists(destination)
+        if source_exists and destination_exists:
+            raise EvidenceError(
+                f"both unverified output and its quarantine destination exist for {relative!r}"
+            )
+        if source_exists:
+            identity = file_identity(source, label=f"recovery source {relative!r}")
+        elif destination_exists:
+            identity = file_identity(
+                destination,
+                label=f"recovery destination for {relative!r}",
+            )
+        else:
+            continue
+        reconstructed_outputs[relative] = identity
+
+    reconstructed = project_workspace_summary(manifest, reconstructed_outputs)
+    if reconstructed != recorded:
+        raise EvidenceError(
+            f"workspace observation changed since the recorded attempt {phase}"
+        )
+    return current
+
+
+def _current_workspace_observation(
+    context: _RunContext,
+    *,
+    phase: str,
+) -> dict[str, Any] | None:
+    volatile: tuple[str, ...] = ()
+    incomplete_task: TaskSpec | None = None
+    incomplete_state: dict[str, Any] | None = None
+    for task in context.suite.tasks:
+        task_state = context.state["tasks"][task.task_id]
+        status = task_state["status"]
+        if status == "completed":
+            continue
+        incomplete_task = task
+        incomplete_state = task_state
+        if status in {"running", "failed"}:
+            volatile = task.outputs
+        break
+    if (
+        context.plan["schema_version"] == 3
+        and incomplete_task is not None
+        and incomplete_state is not None
+        and incomplete_state["status"] in {"running", "failed"}
+        and incomplete_state["attempts"]
+    ):
+        return _recovery_workspace_observation(
+            context, incomplete_task, incomplete_state["attempts"][-1], phase=phase
+        )
+
+    observation = _bound_workspace_observation(
+        context,
+        phase=phase,
+        volatile_outputs=volatile,
+    )
+
+    if observation is None or incomplete_state is None:
+        return observation
+    attempts = incomplete_state["attempts"]
+    if not attempts:
+        return observation
+    latest = attempts[-1]
+    expected = None
+    if incomplete_state["status"] == "pending":
+        expected = latest.get("workspace_recovered")
+    elif incomplete_state["status"] in {"running", "failed"}:
+        expected = latest.get("workspace_after")
+    if expected is not None and observation != expected:
+        raise EvidenceError(
+            f"workspace observation changed since the recorded attempt {phase}"
+        )
+    return observation
+
+
 def _resolved_executable(
     suite: SuiteSpec,
     task: TaskSpec,
@@ -433,7 +683,7 @@ def _resolved_executable(
     if raw_path.is_absolute():
         candidate = raw_path
     elif raw_path.parent != Path(".") or "/" in raw or "\\" in raw:
-        candidate = suite.root / raw_path
+        candidate = _task_root(suite) / raw_path
     else:
         located = shutil.which(raw)
         if located is None:
@@ -473,14 +723,14 @@ def _resolved_executable(
 
 
 def _launch_environment() -> tuple[dict[str, str], dict[str, Any]]:
-    """Return the frozen v2 base environment and its non-secret identity."""
+    """Return the frozen execution-context environment and non-secret identity."""
 
     values: dict[str, str] = {}
     if os.name == "nt":
         system_root = os.environ.get("SystemRoot")
         if not system_root or "\x00" in system_root:
             raise BoundaryError(
-                "suite version 2 requires a valid Windows SystemRoot"
+                "execution-context suites require a valid Windows SystemRoot"
             )
         values["SystemRoot"] = system_root
     identities: dict[str, dict[str, str | int]] = {}
@@ -489,7 +739,7 @@ def _launch_environment() -> tuple[dict[str, str], dict[str, Any]]:
             encoded_value = value.encode("utf-8")
         except UnicodeEncodeError as exc:
             raise BoundaryError(
-                f"version 2 launch environment {name} is not valid UTF-8 text"
+                f"execution-context launch environment {name} is not valid UTF-8 text"
             ) from exc
         identities[name] = {
             "sha256": hashlib.sha256(encoded_value).hexdigest(),
@@ -510,10 +760,10 @@ def _task_execution_context(
     suite: SuiteSpec,
     task: TaskSpec,
 ) -> tuple[Path, dict[str, str], dict[str, Any]]:
-    if suite.version != 2 or suite.context is None:
-        raise EvidenceError("task execution context requires suite version 2")
+    if not _uses_execution_context(suite.version) or suite.context is None:
+        raise EvidenceError("task execution context requires suite version 2 or 3")
     descriptor_identity = member_identity(
-        suite.root,
+        _task_root(suite),
         suite.context.path,
         label="execution-context descriptor",
     )
@@ -545,7 +795,7 @@ def _suite_execution_context(suite: SuiteSpec) -> dict[str, Any] | None:
     if suite.version == 1:
         return None
     if suite.context is None:
-        raise EvidenceError("suite version 2 lacks an execution-context descriptor")
+        raise EvidenceError("execution-context suite lacks its descriptor")
     tasks: dict[str, dict[str, Any]] = {}
     for task in suite.tasks:
         _, _, tasks[task.task_id] = _task_execution_context(suite, task)
@@ -590,28 +840,66 @@ def _verify_next_execution_context(context: _RunContext) -> None:
 
 def _preflight_suite(
     suite: SuiteSpec,
-) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]:
     require_process_identity_support()
+    task_root = _task_root(suite)
     seed_inputs: dict[str, dict[str, Any]] = {}
     for relative in suite.seed_inputs:
         seed_inputs[relative] = member_identity(
-            suite.root,
+            task_root,
             relative,
             label=f"seed input {relative!r}",
         )
     for task in suite.tasks:
         for relative in task.outputs:
             ensure_output_parent_boundary(
-                suite.root,
+                task_root,
                 relative,
                 label=f"output {relative!r}",
             )
             ensure_member_absent(
-                suite.root,
+                task_root,
                 relative,
                 label=f"output {relative!r}",
             )
-    return seed_inputs, _suite_execution_context(suite)
+    return seed_inputs, _suite_execution_context(suite), _suite_workspace_binding(suite)
+
+
+def inspect_workspace_suite(suite_file: Path | str) -> dict[str, Any]:
+    """Validate one version 3 suite without creating run evidence or launching tasks."""
+
+    try:
+        suite = load_suite(suite_file)
+        if suite.version != 3:
+            raise EvidenceError("workspace inspection requires suite version 3")
+        seed_inputs, _execution_context, workspace = _preflight_suite(suite)
+        if workspace is None:
+            raise EvidenceError("suite version 3 lacks a workspace binding")
+        return {
+            "status": "matched",
+            "schema_version": suite.version,
+            "policy": workspace["policy"],
+            "tasks": len(suite.tasks),
+            "seed_inputs": len(seed_inputs),
+            "declared_outputs": sum(len(task.outputs) for task in suite.tasks),
+            "manifest": {
+                "sha256": workspace["manifest"]["sha256"],
+                "size": workspace["manifest"]["size"],
+            },
+            "workspace": workspace["baseline"],
+        }
+    except EvidenceError:
+        raise
+    except BenchHandoffError as exc:
+        raise EvidenceError(f"workspace suite is invalid: {exc}") from exc
+    except (KeyError, IndexError, TypeError, ValueError, OSError) as exc:
+        raise EvidenceError(
+            f"workspace suite could not be safely inspected: {type(exc).__name__}: {exc}"
+        ) from exc
 
 
 def _initial_plan(
@@ -619,6 +907,7 @@ def _initial_plan(
     run_root: Path,
     seed_inputs: dict[str, dict[str, Any]],
     execution_context: dict[str, Any] | None,
+    workspace: dict[str, Any] | None,
 ) -> dict[str, Any]:
     plan = {
         "schema_version": suite.version,
@@ -641,6 +930,8 @@ def _initial_plan(
     }
     if execution_context is not None:
         plan["execution_context"] = execution_context
+    if workspace is not None:
+        plan["workspace"] = workspace
     return plan
 
 
@@ -834,6 +1125,86 @@ def _validate_context_descriptor(value: Any, *, label: str) -> dict[str, Any]:
     return value
 
 
+def _validate_workspace_descriptor(value: Any, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(
+        value,
+        {"root", "manifest", "digest", "size", "policy"},
+        label=label,
+    )
+    root = _validate_portable_path(value["root"], label=f"{label}.root")
+    manifest = _validate_portable_path(
+        value["manifest"],
+        label=f"{label}.manifest",
+    )
+    if manifest == root or manifest.startswith(f"{root}/"):
+        raise EvidenceError(f"{label}.manifest must be outside the workspace root")
+    digest = value["digest"]
+    if (
+        not isinstance(digest, str)
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None
+    ):
+        raise EvidenceError(f"{label}.digest is invalid")
+    size = value["size"]
+    if (
+        not _non_bool_int(size)
+        or size < 0
+        or size > MAX_WORKSPACE_MANIFEST_BYTES
+    ):
+        raise EvidenceError(f"{label}.size is invalid")
+    if value["policy"] != WORKSPACE_POLICY:
+        raise EvidenceError(f"{label}.policy is invalid")
+    return value
+
+
+def _validate_workspace_summary(value: Any, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(
+        value,
+        {"tree_sha256", "directory_count", "file_count", "total_bytes"},
+        label=label,
+    )
+    if (
+        not isinstance(value["tree_sha256"], str)
+        or _SHA256_PATTERN.fullmatch(value["tree_sha256"]) is None
+    ):
+        raise EvidenceError(f"{label}.tree_sha256 is invalid")
+    for field in ("directory_count", "file_count"):
+        count = value[field]
+        if not _non_bool_int(count) or count < 0 or count > MAX_WORKSPACE_ENTRIES:
+            raise EvidenceError(f"{label}.{field} is invalid")
+    if value["directory_count"] + value["file_count"] > MAX_WORKSPACE_ENTRIES:
+        raise EvidenceError(f"{label} exceeds the workspace entry limit")
+    total_bytes = value["total_bytes"]
+    if (
+        not _non_bool_int(total_bytes)
+        or total_bytes < 0
+        or total_bytes > MAX_WORKSPACE_TOTAL_BYTES
+    ):
+        raise EvidenceError(f"{label}.total_bytes is invalid")
+    return value
+
+
+def _validate_workspace_binding(value: Any, *, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EvidenceError(f"{label} must be an object")
+    _exact_keys(value, {"policy", "root", "manifest", "baseline"}, label=label)
+    if value["policy"] != WORKSPACE_POLICY:
+        raise EvidenceError(f"{label}.policy is invalid")
+    _validate_portable_path(value["root"], label=f"{label}.root")
+    manifest = value["manifest"]
+    if not isinstance(manifest, dict):
+        raise EvidenceError(f"{label}.manifest must be an object")
+    _exact_keys(manifest, {"path", "sha256", "size"}, label=f"{label}.manifest")
+    _validate_portable_path(manifest["path"], label=f"{label}.manifest.path")
+    _validate_identity(
+        {"sha256": manifest["sha256"], "size": manifest["size"]},
+        label=f"{label}.manifest",
+    )
+    _validate_workspace_summary(value["baseline"], label=f"{label}.baseline")
+    return value
 def _validate_executable_identity(value: Any, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise EvidenceError(f"{label} must be an object")
@@ -1013,8 +1384,10 @@ def _validate_plan_shape(plan: Any) -> None:
         "seed_inputs",
         "environment",
     }
-    if schema_version == 2:
+    if _uses_execution_context(schema_version):
         required.add("execution_context")
+    if schema_version == 3:
+        required.add("workspace")
     _exact_keys(plan, required, label="plan.json")
     if (
         plan["kind"] != "benchhandoff-plan"
@@ -1032,18 +1405,25 @@ def _validate_plan_shape(plan: Any) -> None:
     if not isinstance(suite, dict):
         raise EvidenceError("plan.json suite must be an object")
     suite_keys = {"version", "name", "tasks"}
-    if schema_version == 2:
+    if _uses_execution_context(schema_version):
         suite_keys.add("context")
+    if schema_version == 3:
+        suite_keys.add("workspace")
     _exact_keys(suite, suite_keys, label="plan.json suite")
     if (
         not _non_bool_int(suite["version"])
         or suite["version"] != schema_version
     ):
         raise EvidenceError("plan.json suite version is invalid")
-    if schema_version == 2:
+    if _uses_execution_context(schema_version):
         _validate_context_descriptor(
             suite["context"],
             label="plan.json suite.context",
+        )
+    if schema_version == 3:
+        _validate_workspace_descriptor(
+            suite["workspace"],
+            label="plan.json suite.workspace",
         )
     suite_name = _validate_text(suite["name"], label="plan.json suite name")
     if len(suite_name.encode("utf-8")) > MAX_SUITE_NAME_UTF8_BYTES:
@@ -1060,7 +1440,7 @@ def _validate_plan_shape(plan: Any) -> None:
     path_references = 0
     for index, task in enumerate(suite["tasks"]):
         validated = _validate_plan_task(task, index=index)
-        if schema_version == 2:
+        if _uses_execution_context(schema_version):
             _validate_portable_path(
                 validated["argv"][0],
                 label=f"plan.json suite task[{index}].argv executable",
@@ -1089,7 +1469,7 @@ def _validate_plan_shape(plan: Any) -> None:
     )
     for field in environment:
         _validate_text(environment[field], label=f"plan.json environment.{field}")
-    if schema_version == 2:
+    if _uses_execution_context(schema_version):
         execution_context = _validate_execution_context(
             plan["execution_context"],
             task_ids=task_ids,
@@ -1115,6 +1495,25 @@ def _validate_plan_shape(plan: Any) -> None:
         ):
             raise EvidenceError(
                 "plan.json context descriptor is not a declared seed task input"
+            )
+    if schema_version == 3:
+        descriptor = suite["workspace"]
+        binding = _validate_workspace_binding(
+            plan["workspace"],
+            label="plan.json workspace",
+        )
+        expected_manifest = {
+            "path": descriptor["manifest"],
+            "sha256": descriptor["digest"].removeprefix("sha256:"),
+            "size": descriptor["size"],
+        }
+        if (
+            binding["policy"] != descriptor["policy"]
+            or binding["root"] != descriptor["root"]
+            or binding["manifest"] != expected_manifest
+        ):
+            raise EvidenceError(
+                "plan.json workspace binding does not match suite.workspace"
             )
 
 
@@ -1269,10 +1668,13 @@ def _validate_attempt(
         "quarantined_outputs",
         "return_code_unavailable_reason",
     }
-    if plan["schema_version"] == 2:
+    if plan["schema_version"] == 3:
+        required.add("workspace_before")
+        optional.update({"workspace_after", "workspace_recovered"})
+    if _uses_execution_context(plan["schema_version"]):
         required.update({"execution_context_sha256", "process_scope"})
     _exact_keys(attempt, required, optional=optional, label=label)
-    if plan["schema_version"] == 2:
+    if _uses_execution_context(plan["schema_version"]):
         expected_context = plan["execution_context"]["tasks"][task["id"]][
             "context_sha256"
         ]
@@ -1291,6 +1693,19 @@ def _validate_attempt(
     }:
         raise EvidenceError(f"{label}.status is invalid")
     _validate_text(attempt["started_at"], label=f"{label}.started_at")
+    if plan["schema_version"] == 3:
+        _validate_workspace_summary(
+            attempt["workspace_before"],
+            label=f"{label}.workspace_before",
+        )
+        for field in ("workspace_after", "workspace_recovered"):
+            if field in attempt:
+                _validate_workspace_summary(attempt[field], label=f"{label}.{field}")
+        if (
+            status in {"failed", "interrupted"}
+            and "workspace_after" not in attempt
+        ):
+            raise EvidenceError(f"{label} terminal attempt lacks workspace_after")
     if status == "running":
         if attempt["ended_at"] is not None or attempt["return_code"] is not None:
             raise EvidenceError(f"{label} running terminal fields must be null")
@@ -1301,6 +1716,8 @@ def _validate_attempt(
                 "interruption_reason",
                 "verified_outputs",
                 "quarantined_outputs",
+                "workspace_after",
+                "workspace_recovered",
             )
         ):
             raise EvidenceError(f"{label} running attempt has terminal-only fields")
@@ -1327,7 +1744,7 @@ def _validate_attempt(
         raise EvidenceError(
             f"{label} running attempt without a launch guard must identify its child"
         )
-    if plan["schema_version"] == 2:
+    if _uses_execution_context(plan["schema_version"]):
         _validate_attempt_process_scope(
             attempt["process_scope"],
             label=f"{label}.process_scope",
@@ -1387,6 +1804,10 @@ def _validate_attempt(
             label=f"{label}.verified_outputs",
             expected_paths=task["outputs"],
         )
+        if plan["schema_version"] == 3 and "workspace_after" not in attempt:
+            raise EvidenceError(
+                f"{label} completed attempt is missing workspace_after"
+            )
     elif "verified_outputs" in attempt:
         raise EvidenceError(f"{label} non-completed attempt must not verify outputs")
 
@@ -1407,6 +1828,19 @@ def _validate_attempt(
             attempt_number=index + 1,
             label=f"{label}.quarantined_outputs",
         )
+    if (
+        plan["schema_version"] == 3
+        and "quarantined_outputs" in attempt
+        and "workspace_recovered" not in attempt
+    ):
+        raise EvidenceError(f"{label} lacks workspace_recovered")
+    if "workspace_recovered" in attempt:
+        if status not in {"failed", "interrupted"}:
+            raise EvidenceError(f"{label} cannot have workspace_recovered")
+        if "quarantined_outputs" not in attempt:
+            raise EvidenceError(
+                f"{label}.workspace_recovered requires quarantined_outputs"
+            )
     return attempt
 
 
@@ -1510,6 +1944,11 @@ def _validate_state_shape(state: Any, plan: dict[str, Any]) -> None:
                 raise EvidenceError(f"{label} has an impossible non-final attempt")
             if "quarantined_outputs" not in previous:
                 raise EvidenceError(f"{label} has an unrecovered attempt before a successor")
+            if (
+                plan["schema_version"] == 3
+                and "workspace_recovered" not in previous
+            ):
+                raise EvidenceError(f"{label} lacks recovered workspace evidence")
         _validate_identity_map(
             task_state["verified_inputs"],
             label=f"{label}.verified_inputs",
@@ -1723,6 +2162,57 @@ def _validate_run_root_topology(run_root: Path) -> None:
         )
 
 
+def _validate_workspace_history(context: _RunContext) -> None:
+    if context.plan["schema_version"] != 3:
+        return
+    binding = context.plan["workspace"]
+    manifest = load_workspace_manifest(
+        _workspace_manifest_path(context.suite),
+        expected_identity=binding["manifest"],
+    )
+    if manifest.summary != binding["baseline"]:
+        raise EvidenceError("workspace history baseline does not match plan.json")
+
+    sealed_outputs: dict[str, dict[str, Any]] = {}
+    for task in context.suite.tasks:
+        task_state = context.state["tasks"][task.task_id]
+        clean_summary = project_workspace_summary(manifest, sealed_outputs)
+        for attempt in task_state["attempts"]:
+            if attempt["workspace_before"] != clean_summary:
+                raise EvidenceError(
+                    f"task {task.task_id!r} workspace_before is not derivable"
+                )
+            if attempt["status"] == "completed":
+                completed_outputs = dict(sealed_outputs)
+                completed_outputs.update(attempt["verified_outputs"])
+                expected_after = project_workspace_summary(manifest, completed_outputs)
+                if attempt["workspace_after"] != expected_after:
+                    raise EvidenceError(
+                        f"task {task.task_id!r} workspace_after is not derivable"
+                    )
+            elif "quarantined_outputs" in attempt:
+                partial_outputs = {
+                    record["source"]: {
+                        "sha256": record["sha256"],
+                        "size": record["size"],
+                    }
+                    for record in attempt["quarantined_outputs"]
+                }
+                after_outputs = dict(sealed_outputs)
+                after_outputs.update(partial_outputs)
+                expected_after = project_workspace_summary(manifest, after_outputs)
+                if attempt.get("workspace_after") != expected_after:
+                    raise EvidenceError(
+                        f"task {task.task_id!r} recovered workspace_after is not derivable"
+                    )
+                if attempt["workspace_recovered"] != clean_summary:
+                    raise EvidenceError(
+                        f"task {task.task_id!r} workspace_recovered is not derivable"
+                    )
+        if task_state["status"] == "completed":
+            sealed_outputs.update(task_state["verified_outputs"])
+
+
 def _load_context(run_directory: Path | str) -> _RunContext:
     run_root = checked_directory(Path(run_directory).absolute(), label="run directory")
     _validate_run_root_topology(run_root)
@@ -1757,13 +2247,13 @@ def _load_context(run_directory: Path | str) -> _RunContext:
         label=QUARANTINE_DIRECTORY,
     )
     require_same_filesystem(
-        suite.root,
+        _task_root(suite),
         quarantine_root,
         labels=("suite root", "quarantine directory"),
     )
     for task in suite.tasks:
         for relative in task.outputs:
-            output = resolve_member(suite.root, relative, label=f"output {relative!r}")
+            output = resolve_member(_task_root(suite), relative, label=f"output {relative!r}")
             output_parent = nearest_existing_directory(
                 output.parent,
                 label=f"existing output parent for {relative!r}",
@@ -1777,14 +2267,17 @@ def _load_context(run_directory: Path | str) -> _RunContext:
     if set(plan["seed_inputs"]) != set(suite.seed_inputs):
         raise EvidenceError("plan.json seed input set does not match suite.toml")
     for relative, expected in plan["seed_inputs"].items():
-        actual = member_identity(suite.root, relative, label=f"seed input {relative!r}")
+        actual = member_identity(_task_root(suite), relative, label=f"seed input {relative!r}")
         _identity_or_raise(actual, expected, label=f"seed input {relative!r}")
 
     file_identity(_event_path(run_root), label=EVENTS_FILE)
     _event_transition_status(run_root, plan, state)
     _validate_attempt_artifacts(run_root, state, plan)
     del logs_root
-    return _RunContext(suite=suite, run_root=run_root, plan=plan, state=state)
+    context = _RunContext(suite=suite, run_root=run_root, plan=plan, state=state)
+    _validate_workspace_history(context)
+    _current_workspace_observation(context, phase="while loading run evidence")
+    return context
 
 def _producer_map(suite: SuiteSpec) -> dict[str, str]:
     return {
@@ -1818,7 +2311,7 @@ def _expected_inputs(
                     f"producer {producer_id!r} has no verified identity for {relative!r}"
                 )
         actual = member_identity(
-            context.suite.root,
+            _task_root(context.suite),
             relative,
             label=f"input {relative!r} for task {task.task_id!r}",
         )
@@ -1837,7 +2330,7 @@ def _verify_completed_task(context: _RunContext, task: TaskSpec) -> None:
         raise EvidenceError(f"completed task {task.task_id!r} has an incomplete output record")
     for relative in task.outputs:
         actual = member_identity(
-            context.suite.root,
+            _task_root(context.suite),
             relative,
             label=f"completed output {relative!r}",
         )
@@ -1895,7 +2388,7 @@ def _assert_recovery_liveness(context: _RunContext) -> None:
                     f"task {task.task_id!r} attempt {attempt_number} child process "
                     f"{process_id} identity or liveness is unknown; refusing resume"
                 )
-        if context.plan["schema_version"] == 2:
+        if _uses_execution_context(context.plan["schema_version"]):
             scope = attempt["process_scope"]
             if scope["mode"] == "posix-cooperative-process-group":
                 scope_liveness = process_scope_liveness(
@@ -1925,11 +2418,21 @@ def _recover_incomplete_task(context: _RunContext, task: TaskSpec) -> None:
         raise EvidenceError(f"task {task.task_id!r} has an invalid attempt number")
 
     _assert_recovery_liveness(context)
+    if context.plan["schema_version"] == 3:
+        current_workspace = _recovery_workspace_observation(
+            context,
+            task,
+            latest,
+            phase="before quarantine recovery",
+        )
+        if latest.get("workspace_after") is None:
+            latest["workspace_after"] = current_workspace
+
     if previous_status == "running":
         latest["status"] = "interrupted"
         latest["ended_at"] = utc_now()
         latest["interruption_reason"] = "runner did not record a terminal child result"
-        if context.plan["schema_version"] == 2:
+        if _uses_execution_context(context.plan["schema_version"]):
             latest["process_scope"]["empty_confirmed"] = True
             latest["process_scope"]["closure"] = "recovered-empty"
         if latest["child_pid"] is not None and latest["return_code"] is None:
@@ -1944,7 +2447,7 @@ def _recover_incomplete_task(context: _RunContext, task: TaskSpec) -> None:
     )
     for relative in task.outputs:
         source = resolve_member(
-            context.suite.root,
+            _task_root(context.suite),
             relative,
             label=f"unverified output {relative!r}",
         )
@@ -1984,6 +2487,13 @@ def _recover_incomplete_task(context: _RunContext, task: TaskSpec) -> None:
             f"task {task.task_id!r} quarantine identities changed during recovery"
         )
     latest["quarantined_outputs"] = quarantined
+    if context.plan["schema_version"] == 3:
+        latest["workspace_recovered"] = _bound_workspace_observation(
+            context,
+            phase="after quarantine recovery",
+        )
+    else:
+        latest.pop("workspace_recovered", None)
     task_state["status"] = "pending"
     task_state["verified_inputs"] = {}
     task_state["verified_outputs"] = {}
@@ -2119,15 +2629,20 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
     verified_inputs = _expected_inputs(context, task)
     for relative in task.outputs:
         ensure_output_parent_boundary(
-            context.suite.root,
+            _task_root(context.suite),
             relative,
             label=f"output {relative!r}",
         )
         ensure_member_absent(
-            context.suite.root,
+            _task_root(context.suite),
             relative,
             label=f"output {relative!r}",
         )
+    workspace_before = _bound_workspace_observation(
+        context,
+        phase="before task launch",
+    )
+
 
     attempt_number = len(task_state["attempts"]) + 1
     if attempt_number > MAX_ATTEMPTS_PER_TASK:
@@ -2163,6 +2678,8 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
         "stdout": stdout_relative,
         "stderr": stderr_relative,
     }
+    if workspace_before is not None:
+        attempt["workspace_before"] = workspace_before
     if execution_context is not None:
         attempt["execution_context_sha256"] = execution_context["context_sha256"]
         attempt["process_scope"] = {
@@ -2229,7 +2746,7 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
             if execution_context is None:
                 process = subprocess.Popen(
                     list(task.argv),
-                    cwd=context.suite.root,
+                    cwd=_task_root(context.suite),
                     stdin=subprocess.DEVNULL,
                     stdout=stdout_handle,
                     stderr=stderr_handle,
@@ -2241,7 +2758,7 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
                 process_scope = ProcessScope.start(
                     list(task.argv),
                     executable=str(resolved_executable),
-                    cwd=context.suite.root,
+                    cwd=_task_root(context.suite),
                     stdin=subprocess.DEVNULL,
                     stdout=stdout_handle,
                     stderr=stderr_handle,
@@ -2335,7 +2852,7 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
                     ):
                         if process_scope is None:
                             raise EvidenceError(
-                                "version 2 child lacks its process scope"
+                                "execution-context child lacks its process scope"
                             )
                         if process_scope.wait_empty(0.25):
                             mark_scope_empty("natural-empty")
@@ -2363,7 +2880,7 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
     if execution_context is not None and process is not None:
         if not attempt["process_scope"]["empty_confirmed"]:
             raise EvidenceError(
-                "version 2 child termination lacks an empty process-scope confirmation"
+                "execution-context child termination lacks an empty process-scope confirmation"
             )
         try:
             _bound_task_execution_context(
@@ -2376,7 +2893,29 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
                 f"post-exit execution-context validation failed: {exc}"
             )
 
+    if context.plan["schema_version"] == 3:
+        try:
+            attempt["workspace_after"] = _bound_workspace_observation(
+                context,
+                phase="after process-scope closure",
+                volatile_outputs=task.outputs,
+            )
+        except BenchHandoffError as exc:
+            if isinstance(exc, WorkspaceVerificationError) and exc.observation is not None:
+                attempt["workspace_after"] = exc.observation
+            workspace_error = f"post-exit workspace validation failed: {exc}"
+            if post_exit_context_error is not None:
+                post_exit_context_error = f"{post_exit_context_error}; {workspace_error}"
+            else:
+                post_exit_context_error = workspace_error
     if post_exit_context_error is not None:
+        if (
+            context.plan["schema_version"] == 3
+            and "workspace_after" not in attempt
+        ):
+            raise EvidenceError(
+                "post-exit workspace observation is unavailable; durable run state remains running"
+            )
         if launch_error is not None:
             prior_outcome = launch_error
         elif interrupted:
@@ -2428,7 +2967,7 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
     try:
         for relative, expected in verified_inputs.items():
             current = member_identity(
-                context.suite.root,
+                _task_root(context.suite),
                 relative,
                 label=f"post-run input {relative!r}",
             )
@@ -2439,13 +2978,29 @@ def _run_task(context: _RunContext, task: TaskSpec) -> bool:
             )
         verified_outputs = {
             relative: member_identity(
-                context.suite.root,
+                _task_root(context.suite),
                 relative,
                 label=f"output {relative!r}",
             )
             for relative in task.outputs
         }
+        final_workspace = _bound_workspace_observation(
+            context,
+            phase="before output sealing",
+            additional_outputs=verified_outputs,
+        )
+        if final_workspace is not None:
+            attempt["workspace_after"] = final_workspace
     except BenchHandoffError as exc:
+        if isinstance(exc, WorkspaceVerificationError) and exc.observation is not None:
+            attempt["workspace_after"] = exc.observation
+        if (
+            context.plan["schema_version"] == 3
+            and "workspace_after" not in attempt
+        ):
+            raise EvidenceError(
+                "post-run workspace observation is unavailable; durable run state remains running"
+            )
         _finish_failed_attempt(
             context,
             task,
@@ -2498,6 +3053,11 @@ def _build_bundle(context: _RunContext) -> dict[str, Any]:
     bundle_path = context.run_root / BUNDLE_FILE
     if os.path.lexists(bundle_path):
         raise EvidenceError("bundle.json already exists; refusing to overwrite evidence")
+    final_workspace = _bound_workspace_observation(
+        context,
+        phase="before bundle creation",
+    )
+
 
     run_artifacts = []
     for relative in _artifact_paths(context.run_root):
@@ -2521,8 +3081,13 @@ def _build_bundle(context: _RunContext) -> dict[str, Any]:
         "verified_outputs": _final_outputs(context),
         "run_artifacts": run_artifacts,
     }
-    if context.plan["schema_version"] == 2:
+    if _uses_execution_context(context.plan["schema_version"]):
         bundle["execution_context"] = context.plan["execution_context"]
+    if context.plan["schema_version"] == 3:
+        if final_workspace is None:
+            raise EvidenceError("suite version 3 lacks a final workspace observation")
+        bundle["workspace"] = context.plan["workspace"]
+        bundle["final_workspace"] = final_workspace
     atomic_write_json(bundle_path, bundle)
     return bundle
 
@@ -2580,7 +3145,7 @@ def _current_output_observation(
     observations: list[dict[str, Any]] = []
     for relative in task.outputs:
         candidate = resolve_member(
-            context.suite.root,
+            _task_root(context.suite),
             relative,
             label=f"unverified output {relative!r}",
         )
@@ -2650,6 +3215,10 @@ def _build_resume_decision(context: _RunContext) -> dict[str, Any]:
         )
     _verify_completed_prefix(context)
     _assert_recovery_liveness(context)
+    workspace_observation = _current_workspace_observation(
+        context,
+        phase="while building resume decision",
+    )
 
     completed_prefix: list[str] = []
     completed_outputs: list[dict[str, Any]] = []
@@ -2660,7 +3229,7 @@ def _build_resume_decision(context: _RunContext) -> dict[str, Any]:
             completed_prefix.append(task.task_id)
             for relative in task.outputs:
                 identity = member_identity(
-                    context.suite.root,
+                    _task_root(context.suite),
                     relative,
                     label=f"completed output {relative!r}",
                 )
@@ -2734,7 +3303,7 @@ def _build_resume_decision(context: _RunContext) -> dict[str, Any]:
             "unverified_outputs": output_observations,
             "quarantine_candidates": quarantine,
         }
-        if context.plan["schema_version"] == 2:
+        if _uses_execution_context(context.plan["schema_version"]):
             _, _, current_execution_context = _bound_task_execution_context(
                 context,
                 next_task_spec,
@@ -2756,6 +3325,8 @@ def _build_resume_decision(context: _RunContext) -> dict[str, Any]:
         },
         "evidence_files": evidence_files,
     }
+    if workspace_observation is not None:
+        decision["workspace"] = workspace_observation
     decision["decision_sha256"] = _resume_decision_sha256(decision)
     return decision
 
@@ -2783,6 +3354,7 @@ def inspect_resume(run_directory: Path | str) -> dict[str, Any]:
         raise EvidenceError(
             f"run evidence could not be safely interpreted: {type(exc).__name__}: {exc}"
         ) from exc
+
 
 def _execute_remaining(context: _RunContext, *, operation: str) -> RunResult:
     saw_incomplete = False
@@ -2825,10 +3397,23 @@ def _execute_remaining(context: _RunContext, *, operation: str) -> RunResult:
     )
 
 
-def _start_run_checked(suite_file: Path | str, run_directory: Path | str) -> RunResult:
+def _revalidate_suite_source(suite: SuiteSpec) -> None:
+    """Recheck the exact suite bytes after writer-lock acquisition."""
+
+    payload = read_regular_bytes(
+        suite.path,
+        label="suite.toml locked revalidation",
+        max_bytes=MAX_SUITE_BYTES,
+    )
+    actual = {"sha256": hashlib.sha256(payload).hexdigest(), "size": len(payload)}
+    _identity_or_raise(actual, suite.identity, label="suite.toml")
+
+
+def _start_run_checked(suite: SuiteSpec, run_directory: Path | str) -> RunResult:
     """Start one new suite in an absent, separate run directory."""
 
-    suite = load_suite(suite_file)
+    _revalidate_suite_source(suite)
+
     run_candidate = Path(run_directory).absolute()
     require_separate_trees(run_candidate, suite.root, labels=("run directory", "suite root"))
     run_parent = nearest_existing_directory(
@@ -2836,13 +3421,13 @@ def _start_run_checked(suite_file: Path | str, run_directory: Path | str) -> Run
         label="existing run-directory parent",
     )
     require_same_filesystem(
-        suite.root,
+        _task_root(suite),
         run_parent,
         labels=("suite root", "run-directory parent"),
     )
     for task in suite.tasks:
         for relative in task.outputs:
-            output = resolve_member(suite.root, relative, label=f"output {relative!r}")
+            output = resolve_member(_task_root(suite), relative, label=f"output {relative!r}")
             output_parent = nearest_existing_directory(
                 output.parent,
                 label=f"existing output parent for {relative!r}",
@@ -2853,12 +3438,13 @@ def _start_run_checked(suite_file: Path | str, run_directory: Path | str) -> Run
                 labels=(f"output parent for {relative!r}", "run-directory parent"),
             )
 
-    seed_inputs, execution_context = _preflight_suite(suite)
+    seed_inputs, execution_context, workspace = _preflight_suite(suite)
+    _revalidate_suite_source(suite)
     run_root = prepare_new_directory(run_candidate, label="run directory")
     (run_root / LOGS_DIRECTORY).mkdir(mode=0o700)
     (run_root / QUARANTINE_DIRECTORY).mkdir(mode=0o700)
 
-    plan = _initial_plan(suite, run_root, seed_inputs, execution_context)
+    plan = _initial_plan(suite, run_root, seed_inputs, execution_context, workspace)
     atomic_write_json(run_root / PLAN_FILE, plan)
     plan_identity = file_identity(run_root / PLAN_FILE, label=PLAN_FILE)
     create_empty_regular(run_root / EVENTS_FILE, label=EVENTS_FILE)
@@ -2873,15 +3459,50 @@ def _start_run_checked(suite_file: Path | str, run_directory: Path | str) -> Run
     )
     return _execute_remaining(context, operation="start")
 
+def _acquire_workspace_writer_lock(suite: SuiteSpec) -> WriterLock | None:
+    if suite.version != 3:
+        return None
+    return WriterLock.acquire(_task_root(suite))
+
+
+def _suite_for_existing_run_workspace_lock(
+    run_directory: Path | str,
+) -> SuiteSpec | None:
+    run_root = checked_directory(Path(run_directory).absolute(), label="run directory")
+    _validate_run_root_topology(run_root)
+    plan = read_json_file(run_root / PLAN_FILE, label=PLAN_FILE)
+    _validate_plan_shape(plan)
+    if plan["schema_version"] != 3:
+        return None
+    suite_file = plan["suite_file"]
+    try:
+        suite = load_suite(suite_file["path"])
+    except BenchHandoffError as exc:
+        raise EvidenceError(f"suite bound by plan.json cannot be loaded: {exc}") from exc
+    if str(suite.root) != plan["suite_root"]:
+        raise EvidenceError("current suite root does not match plan.json")
+    _identity_or_raise(suite.identity, suite_file, label="suite.toml")
+    if suite.normalized() != plan["suite"]:
+        raise EvidenceError("normalized suite no longer matches plan.json")
+    return suite
+
+
 def start_run(suite_file: Path | str, run_directory: Path | str) -> RunResult:
     """Start while converting operational failures into a stable evidence error."""
 
     try:
         writer_lock = WriterLock.acquire(run_directory)
+        workspace_lock: WriterLock | None = None
         try:
-            return _start_run_checked(suite_file, run_directory)
+            suite = load_suite(suite_file)
+            workspace_lock = _acquire_workspace_writer_lock(suite)
+            return _start_run_checked(suite, run_directory)
         finally:
-            writer_lock.release()
+            try:
+                if workspace_lock is not None:
+                    workspace_lock.release()
+            finally:
+                writer_lock.release()
     except BenchHandoffError:
         raise
     except (KeyError, IndexError, TypeError, ValueError, OSError) as exc:
@@ -2959,13 +3580,21 @@ def resume_run(
 
     try:
         writer_lock = WriterLock.acquire(run_directory)
+        workspace_lock: WriterLock | None = None
         try:
+            suite = _suite_for_existing_run_workspace_lock(run_directory)
+            if suite is not None:
+                workspace_lock = _acquire_workspace_writer_lock(suite)
             return _resume_run_checked(
                 run_directory,
                 expected_decision_sha256=expected_decision_sha256,
             )
         finally:
-            writer_lock.release()
+            try:
+                if workspace_lock is not None:
+                    workspace_lock.release()
+            finally:
+                writer_lock.release()
     except EvidenceError:
         raise
     except BenchHandoffError as exc:
@@ -2988,8 +3617,10 @@ def _validate_bundle_shape(bundle: Any, plan: dict[str, Any]) -> None:
         "verified_outputs",
         "run_artifacts",
     }
-    if plan["schema_version"] == 2:
+    if _uses_execution_context(plan["schema_version"]):
         required.add("execution_context")
+    if plan["schema_version"] == 3:
+        required.update({"workspace", "final_workspace"})
     _exact_keys(bundle, required, label="bundle.json")
     if (
         not _non_bool_int(bundle["schema_version"])
@@ -3004,10 +3635,23 @@ def _validate_bundle_shape(bundle: Any, plan: dict[str, Any]) -> None:
     if bundle["suite_file"] != plan["suite_file"]:
         raise EvidenceError("bundle.json suite_file does not match plan.json")
     if (
-        plan["schema_version"] == 2
+        _uses_execution_context(plan["schema_version"])
         and bundle["execution_context"] != plan["execution_context"]
     ):
         raise EvidenceError("bundle.json execution_context does not match plan.json")
+    if plan["schema_version"] == 3:
+        workspace = _validate_workspace_binding(
+            bundle["workspace"],
+            label="bundle.json workspace",
+        )
+        if workspace != plan["workspace"]:
+            raise EvidenceError(
+                "bundle.json workspace does not match plan.json"
+            )
+        _validate_workspace_summary(
+            bundle["final_workspace"],
+            label="bundle.json final_workspace",
+        )
     _validate_identity_map(
         bundle["seed_inputs"],
         label="bundle.json seed_inputs",
@@ -3075,12 +3719,21 @@ def _verify_run_checked(run_directory: Path | str) -> dict[str, Any]:
         label="bundle suite.toml",
     )
 
+    if context.plan["schema_version"] == 3:
+        current_workspace = _bound_workspace_observation(
+            context,
+            phase="during final bundle verification",
+        )
+        if bundle["final_workspace"] != current_workspace:
+            raise EvidenceError(
+                "bundle final workspace observation does not match the current tree"
+            )
     expected_outputs = _final_outputs(context)
     if bundle["verified_outputs"] != expected_outputs:
         raise EvidenceError("bundle output records do not match state.json")
     for output in expected_outputs:
         actual = member_identity(
-            context.suite.root,
+            _task_root(context.suite),
             output["path"],
             label=f"verified output {output['path']!r}",
         )

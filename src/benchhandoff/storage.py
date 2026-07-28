@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
 import os
 import stat
+import sys
 import unicodedata
 import uuid
 from datetime import UTC, datetime
@@ -368,6 +370,78 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
+def _rename_no_replace(source: Path, destination: Path, *, label: str) -> None:
+    """Atomically rename one path while refusing any existing destination."""
+
+    try:
+        if os.name == "nt":
+            # Windows os.rename fails when the destination already exists.
+            os.rename(source, destination)
+            return
+
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        encoded_source = os.fsencode(source)
+        encoded_destination = os.fsencode(destination)
+        if sys.platform.startswith("linux"):
+            try:
+                renameat2 = libc.renameat2
+            except AttributeError as exc:
+                raise BoundaryError(
+                    f"{label} requires atomic no-replace rename support"
+                ) from exc
+            renameat2.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            renameat2.restype = ctypes.c_int
+            result = renameat2(
+                -100,
+                encoded_source,
+                -100,
+                encoded_destination,
+                1,
+            )
+        elif sys.platform == "darwin":
+            try:
+                renamex_np = libc.renamex_np
+            except AttributeError as exc:
+                raise BoundaryError(
+                    f"{label} requires atomic no-replace rename support"
+                ) from exc
+            renamex_np.argtypes = [
+                ctypes.c_char_p,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            renamex_np.restype = ctypes.c_int
+            result = renamex_np(encoded_source, encoded_destination, 0x00000004)
+        else:
+            raise BoundaryError(
+                f"{label} requires atomic no-replace rename support"
+            )
+
+        if result != 0:
+            error_number = ctypes.get_errno()
+            raise OSError(
+                error_number,
+                os.strerror(error_number),
+                str(destination),
+            )
+    except FileExistsError as exc:
+        raise BoundaryError(f"{label} destination appeared during move") from exc
+    except BoundaryError:
+        raise
+    except OSError as exc:
+        if exc.errno == errno.EEXIST:
+            raise BoundaryError(f"{label} destination appeared during move") from exc
+        raise EvidenceError(f"unable to atomically move {label}: {exc}") from exc
+
+
 def move_regular_same_filesystem(
     source: Path | str,
     destination: Path | str,
@@ -404,10 +478,7 @@ def move_regular_same_filesystem(
         )
 
     expected = file_identity(source_candidate, label=f"{label} source")
-    try:
-        os.replace(source_candidate, destination_candidate)
-    except OSError as exc:
-        raise EvidenceError(f"unable to atomically move {label}: {exc}") from exc
+    _rename_no_replace(source_candidate, destination_candidate, label=label)
 
     actual = file_identity(destination_candidate, label=f"{label} destination")
     if not identities_match(actual, expected):

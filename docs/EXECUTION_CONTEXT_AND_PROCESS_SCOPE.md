@@ -1,8 +1,8 @@
-# Execution-context binding and process-scope lifecycle
+# Execution-context, process-scope, and version 3 workspace lifecycle
 
-Suite version 2 adds two fail-closed controls to the version 1 evidence
-protocol. They are deliberately narrower than an environment snapshot system
-or a sandbox.
+Suite versions 2 and 3 add fail-closed controls to the version 1 evidence
+protocol. They are deliberately narrower than an environment snapshot system,
+continuous monitor, or sandbox.
 
 ## Bound launch context
 
@@ -118,13 +118,40 @@ state-write failure, and runner hard exit. These are synthetic local lifecycle
 tests. They do not establish production reliability, hostile-code isolation,
 real workload performance, external use, or independent review.
 
-## Version 1 compatibility
+## Version 3 workspace checkpoints
 
-The reader continues to validate and execute suite/evidence schema version 1
-with its original single-process and inherited-environment behavior. Version 1
-records do not gain version 2 fields retroactively. The version dispatch is
-strict: fields required by version 2 remain invalid extras in version 1, and
-version 2 cannot omit its context or process-scope records.
+Version 3 inherits the entire version 2 descriptor, minimal environment,
+executable identity, and process-scope lifecycle. It changes the task root to
+one dedicated `workspace.root` and binds a reviewed manifest stored outside
+that root. The bounded persistent directory topology and ordinary-file
+primary-stream bytes are observed before the run, before launch, after
+quiescence, during recovery, before bundling, and during verify.
+
+These are discrete observations of only `workspace.root`. They neither prevent
+writes elsewhere nor continuously watch the tree. Device-id comparison can miss
+a same-device bind mount. The protocol does not bind file mode, owner,
+timestamps, ACLs, extended attributes, NTFS alternate data streams, sparse-file
+layout, or other unlisted metadata. It is not a sandbox or hostile-writer
+boundary.
+
+After a normal child exit, `workspace_after` is a post-quiescence observation.
+After a hard runner crash, a durable `running` attempt may lack that terminal
+view; recovery observes the then-current tree before quarantine and cannot
+claim it was the exact crash-time tree. Quarantine uses an atomic no-replace
+primitive only on Windows, Linux, and macOS and fails closed when unavailable.
+
+See
+[`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](CLOSED_WORLD_WORKSPACE_INTEGRITY.md)
+for the full workspace and privacy boundary.
+
+## Version 1 and 2 compatibility
+
+The reader continues to validate and execute suite/evidence schema versions 1
+and 2 with their original task roots and evidence shapes. Old records do not
+gain newer fields retroactively. Dispatch is strict: version 1 rejects version
+2 and 3 extras; version 2 still requires context/process-scope records and
+rejects workspace fields; version 3 requires both the version 2 records and its
+workspace binding.
 
 ## Publication and privacy boundary
 
@@ -132,5 +159,7 @@ The executable record omits its raw resolved path, and static environment
 values are hashed. That does not make an entire run directory safe to publish.
 The suite and attempt still contain the full argument array; plan and resume
 records still contain absolute suite/run paths; logs contain arbitrary child
-output. Review and reproduce with synthetic inputs instead of publishing raw
+output. Version 3 manifests reveal relative paths, kinds, sizes, and content
+hashes, while workspace writer locks can reveal the absolute root and owner PID.
+Review and reproduce with synthetic inputs instead of publishing raw
 run evidence.

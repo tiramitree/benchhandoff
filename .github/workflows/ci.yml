@@ -41,7 +41,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Compile source and validation assets
-        run: python -m compileall -q src tests tools benchmarks examples
+        run: >-
+          python -m compileall -q src tests tools benchmarks
+          examples/recovery_pipeline examples/context_bound
 
       - name: Enforce the final license state
         run: python tools/verify_license_state.py --require-final
@@ -163,6 +165,12 @@ jobs:
             cp -R "$GITHUB_WORKSPACE/examples/context_bound" context-bound
             PATH="$smoke_root/venv/bin:$PATH" "$smoke_root/venv/bin/benchhandoff" start context-bound/suite.toml --run-dir runs/context-bound
             "$smoke_root/venv/bin/benchhandoff" verify runs/context-bound
+            cp -R "$GITHUB_WORKSPACE/examples/closed_world_workspace" closed-world
+            "$smoke_root/venv/bin/benchhandoff" snapshot-workspace closed-world/workspace --output closed-world/candidate.snapshot.json
+            cmp closed-world/workspace.snapshot.json closed-world/candidate.snapshot.json
+            PATH="$smoke_root/venv/bin:$PATH" "$smoke_root/venv/bin/benchhandoff" inspect-workspace closed-world/suite.toml
+            PATH="$smoke_root/venv/bin:$PATH" "$smoke_root/venv/bin/benchhandoff" start closed-world/suite.toml --run-dir runs/closed-world
+            "$smoke_root/venv/bin/benchhandoff" verify runs/closed-world
           )
 
       - name: Upload the tested distribution bytes
