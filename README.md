@@ -1,4 +1,4 @@
-# BenchHandoff v0.3.0 candidate
+# BenchHandoff v0.3.0
 
 [![CI](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
 
@@ -36,7 +36,7 @@ BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
 scheduler, sandbox, cryptographic attestation service, or guarantee of full
 reproducibility.
 
-## What the v0.3.0 candidate adds
+## What v0.3 adds
 
 Suite schema version 3 keeps the version 2 execution-context and process-family
 controls, then adds a reviewed closed-world manifest for one dedicated
@@ -128,8 +128,8 @@ guarantee. See [LIMITATIONS.md](LIMITATIONS.md).
 
 ## Requirements and implemented execution targets
 
-- Python 3.11 or newer. The released v0.2.0 public CI covered CPython 3.11
-  through 3.14; that historical result is not validation of this candidate.
+- Python 3.11 or newer. The v0.3.0 code-bearing main-branch public CI covered
+  CPython 3.11 through 3.14 on Ubuntu 24.04 and Windows Server 2025.
 - Windows or Linux for child execution. Linux requires `/proc` so the runner can
   bind a PID to a stable process-start identity and inspect version 2 process
   groups.
@@ -147,9 +147,25 @@ source needs no install.
 
 ## Validation status
 
-The published validation facts below belong to v0.2.0 and its named commits.
-They do not assert that the v0.3.0 candidate has passed public CI, been tagged,
-or been released.
+The v0.3.0 code-bearing commit
+`pre-rewrite-commit-retired` completed all ten jobs in public
+main-branch
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+on 2026-07-28 (UTC+00:00). Each of the eight Ubuntu 24.04 and Windows Server
+2025 jobs across CPython 3.11 through 3.14 ran 211 tests with no failures,
+errors, or skips. The dependent evidence job generated and re-verified the
+canonical synthetic package. The package job built one wheel and one sdist,
+passed the public-privacy, strict Twine, and embedded-license checks, installed
+the exact wheel outside the checkout, and completed the version 1 recovery,
+version 2 context-bound, and version 3 closed-world workspace smokes. The
+feature-branch
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+also completed all ten jobs on the same code-bearing commit.
+
+These are maintainer-operated synthetic CI results, not external use,
+independent reproduction, production reliability, hostile-writer protection,
+or real-workload performance evidence. A tag or GitHub Release is a
+distribution event and does not change that boundary.
 
 For historical reference, the v0.2.0 release commit
 `pre-rewrite-commit-retired` completed all ten jobs in public

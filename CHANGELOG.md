@@ -3,10 +3,14 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
-## 0.3.0 - Unreleased
+## 0.3.0 - 2026-07-28
 
-This is a candidate change set. No tag, GitHub Release, public-CI result,
-external adoption, performance result, or support commitment is asserted here.
+Code-bearing commit `pre-rewrite-commit-retired`
+completed all ten jobs in public main-branch CI
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+That maintainer-operated synthetic validation and any tag or GitHub Release do
+not assert external adoption, performance, production reliability, or a support
+commitment.
 
 ### Added
 

@@ -1,7 +1,7 @@
 # Limitations
 
-BenchHandoff v0.3.0 is a candidate narrow local run-evidence CLI, not a security
-sandbox, hostile-writer boundary, or distributed workflow engine.
+BenchHandoff v0.3.0 is a narrow local run-evidence CLI, not a security sandbox,
+hostile-writer boundary, or distributed workflow engine.
 
 ## Implemented execution targets
 
@@ -208,9 +208,11 @@ in scope.
 
 ## Claim boundary
 
-Recorded v0.2 validation is maintainer-operated and synthetic, including local
-tests and public CI. This v0.3.0 candidate makes no new public-CI, tag, or
-release claim. No claim is made about production use, external users,
-independent reproduction, real-workload performance, or compatibility with a
-specific embodied-simulation stack. A GitHub tag or release is a distribution
-event; it does not establish any of those external claims.
+Recorded v0.3 validation is maintainer-operated and synthetic, including the
+211-test Ubuntu/Windows matrix, evidence generation, and exact-distribution
+smoke in public main-branch
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+No claim is made about production use, external users, independent
+reproduction, real-workload performance, or compatibility with a specific
+embodied-simulation stack. A GitHub tag or release is a distribution event; it
+does not establish any of those external claims.

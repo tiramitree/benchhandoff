@@ -10,9 +10,13 @@ public-CI-tested commit. Every later release must repeat the same exact-commit
 gates. There is no TestPyPI or PyPI publication, supported production line, or
 external-adoption claim.
 
-Version `0.3.0` is currently a candidate, not a tag or Release. Nothing in this
-checklist claims that its CI, release, adoption, compatibility, or performance
-gates have completed.
+Version `0.3.0` code-bearing commit
+`pre-rewrite-commit-retired` completed exact-commit public
+main-branch CI
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+Its release-preparation commit must repeat the same gates before tagging.
+Neither those gates nor a tag or Release establishes adoption, production
+compatibility, or performance.
 
 ## 1. Resolve release blockers
 

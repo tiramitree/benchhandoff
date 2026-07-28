@@ -23,10 +23,9 @@ leases. Device-id comparison also does not detect every same-device bind mount.
 
 ## Supported versions
 
-Versions 0.1.0 and 0.2.0 are early GitHub releases, not supported production
-lines. Version 0.3.0 is currently a candidate, not a tag or release. Security
-reports may identify `v0.1.0`, `v0.2.0`, the exact candidate commit, or another
-exact `main` commit. There is no response-time, remediation-time,
+Versions 0.1.0 through 0.3.0 are early GitHub versions, not supported
+production lines. Security reports may identify `v0.1.0`, `v0.2.0`, `v0.3.0`,
+or another exact `main` commit. There is no response-time, remediation-time,
 compatibility, or maintenance commitment.
 
 ## Reporting a vulnerability
