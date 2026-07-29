@@ -1,11 +1,12 @@
-# BenchHandoff v0.5.0 candidate
+# BenchHandoff v0.5.0
 
 [![CI](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
 [![AgentRun real kind E2E](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml)
 
-> **Release scope:** v0.5.0 remains a GitHub-only early version line. It is not
-> published to a package registry and does not establish production support,
-> compatibility, independent review, or adoption.
+> **Release scope:** Version 0.5.0 is a GitHub-only early version line when
+> published. A source commit alone is not a release. It is not published to a
+> package registry and does not establish production support, compatibility,
+> independent review, or adoption.
 
 BenchHandoff is a narrow evidence engine for resuming a flat, sequential batch
 of expensive commands. The Python CLI runs locally. Version 0.4 also includes
@@ -276,11 +277,11 @@ current tag and asset state is shown on the
 This document intentionally omits superseded commit, run, artifact, asset,
 size, and digest identifiers; they do not validate a rewritten tag.
 
-Version 0.5 remains a candidate until its exact final commit and annotated tag
-complete the registered gates. Its intended scope is GitHub-only. The Go
-manager, CRD, reference Kustomize manifests, and kind gate remain source-only;
-no controller image, Helm chart, package-registry publication, production
-support, independent reproduction, external use, or adoption is asserted.
+Version 0.5 is a GitHub-only early release only when its current annotated tag
+peels to a commit that completed the registered gates. The Go manager, CRD,
+reference Kustomize manifests, and kind gate remain source-only; no controller
+image, Helm chart, package-registry publication, production support,
+independent reproduction, external use, or adoption is asserted.
 
 ## Five-minute quickstart
 

@@ -13,10 +13,10 @@ external-adoption claim.
 Versions 0.1 through 0.4 are historical GitHub-only early releases. Their
 current annotated tags, workflow results, and Release asset sets must be
 evaluated directly; this source tree does not carry forward validation
-identifiers from superseded history. Version 0.5 remains a candidate until
-its exact final commit and tag complete every gate below. Neither a workflow
-result, tag, nor Release establishes adoption, production compatibility, or
-performance.
+identifiers from superseded history. A version 0.5 release is current only when
+its annotated tag peels to a commit that completed every gate below. Neither a
+workflow result, tag, nor Release establishes adoption, production
+compatibility, or performance.
 
 ## 1. Resolve release blockers
 

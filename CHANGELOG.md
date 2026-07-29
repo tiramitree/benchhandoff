@@ -3,7 +3,7 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
-## Unreleased - 0.5.0 candidate
+## 0.5.0 - 2026-07-29
 
 Version 0.5.0 is a GitHub-only early version line. The controller remains
 source-only; no controller image, package-registry publication, production
@@ -40,8 +40,8 @@ support, independent review, external use, or adoption is asserted.
 
 This source tree intentionally omits validation identifiers from superseded
 history. The checked-in CI and real-kind workflows define the registered
-procedures, but no current-tip public pass or v0.5 release is claimed until
-the exact final commit and tag complete those gates.
+procedures. The release claim applies only when the current annotated tag peels
+to a commit that completed both public CI and real-kind gates.
 
 Version 0.5 is a fixed active/passive takeover experiment with one kind node
 and continuously available API-server storage. It does not establish strict
