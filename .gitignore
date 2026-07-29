@@ -10,3 +10,6 @@ dist/
 *.egg-info/
 demo/
 runs/
+controller/.build/
+controller/.cache/
+controller/bin/

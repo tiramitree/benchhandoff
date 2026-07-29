@@ -1,0 +1,47 @@
+name: AgentRun real kind E2E
+
+on:
+  push:
+    paths:
+      - ".dockerignore"
+      - ".github/workflows/agentrun-kind.yml"
+      - "controller/**"
+      - "src/benchhandoff/**"
+  pull_request:
+    paths:
+      - ".dockerignore"
+      - ".github/workflows/agentrun-kind.yml"
+      - "controller/**"
+      - "src/benchhandoff/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentrun-kind-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  real-kind:
+    name: Pinned single-node AgentRun protocol
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: "1.26.5"
+          cache: false
+
+      - name: Run the pinned real kind gate
+        shell: bash
+        run: bash controller/test/e2e/run_kind.sh

@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: benchhandoff-e2e
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: benchhandoff-e2e-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 1Gi
+  hostPath:
+    path: /var/lib/benchhandoff-e2e
+    type: Directory
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: benchhandoff-e2e-manual
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: benchhandoff-e2e-data
+  namespace: benchhandoff-e2e
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: benchhandoff-e2e-manual
+  volumeMode: Filesystem
+  volumeName: benchhandoff-e2e-data

@@ -1,0 +1,9 @@
+**
+!src/
+!src/benchhandoff/
+!src/benchhandoff/**
+src/benchhandoff/**/__pycache__/
+src/benchhandoff/**/*.pyc
+src/benchhandoff/**/*.pyo
+!controller/
+!controller/runner.Dockerfile

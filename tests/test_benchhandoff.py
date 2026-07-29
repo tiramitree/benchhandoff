@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -107,6 +108,35 @@ class BenchHandoffTests(unittest.TestCase):
                 with self.assertRaisesRegex(ConfigurationError, "path reference limit"):
                     start_run(suite, path_reference_run)
             self.assertFalse(path_reference_run.exists())
+
+    def test_expected_suite_digest_binds_the_parsed_suite_bytes(self) -> None:
+        with self.temporary_root() as temporary:
+            root = Path(temporary)
+            suite = write_suite(root / "suite", SUCCESS_WORKER)
+            expected = hashlib.sha256(suite.read_bytes()).hexdigest()
+            matching_run = root / "matching-run"
+
+            self.assertEqual(
+                start_run(
+                    suite,
+                    matching_run,
+                    expected_suite_sha256=expected,
+                ).status,
+                "completed",
+            )
+
+            for label, invalid in (
+                ("mismatch", ("0" if expected[0] != "0" else "1") + expected[1:]),
+                ("uppercase", expected.upper()),
+            ):
+                rejected_run = root / f"{label}-run"
+                with self.assertRaises(EvidenceError):
+                    start_run(
+                        suite,
+                        rejected_run,
+                        expected_suite_sha256=invalid,
+                    )
+                self.assertFalse(rejected_run.exists())
 
     def test_ancestor_file_paths_are_rejected_before_any_child(self) -> None:
         with self.temporary_root() as temporary:

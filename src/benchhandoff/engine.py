@@ -3487,14 +3487,38 @@ def _suite_for_existing_run_workspace_lock(
     return suite
 
 
-def start_run(suite_file: Path | str, run_directory: Path | str) -> RunResult:
-    """Start while converting operational failures into a stable evidence error."""
+def start_run(
+    suite_file: Path | str,
+    run_directory: Path | str,
+    *,
+    expected_suite_sha256: str | None = None,
+) -> RunResult:
+    """Start while converting operational failures into a stable evidence error.
+
+    When supplied, ``expected_suite_sha256`` commits the caller to the exact
+    suite bytes that are parsed into the execution plan. The later locked
+    revalidations still protect the preflight-to-execution boundary.
+    """
 
     try:
+        if expected_suite_sha256 is not None and (
+            not isinstance(expected_suite_sha256, str)
+            or _SHA256_PATTERN.fullmatch(expected_suite_sha256) is None
+        ):
+            raise EvidenceError(
+                "expected suite SHA-256 must be 64 lowercase hexadecimal characters"
+            )
         writer_lock = WriterLock.acquire(run_directory)
         workspace_lock: WriterLock | None = None
         try:
             suite = load_suite(suite_file)
+            if (
+                expected_suite_sha256 is not None
+                and suite.identity["sha256"] != expected_suite_sha256
+            ):
+                raise EvidenceError(
+                    "suite.toml does not match the expected suite SHA-256"
+                )
             workspace_lock = _acquire_workspace_writer_lock(suite)
             return _start_run_checked(suite, run_directory)
         finally:

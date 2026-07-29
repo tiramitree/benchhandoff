@@ -1,0 +1,38 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentrun-controller
+rules:
+  - apiGroups:
+      - control.benchhandoff.dev
+    resources:
+      - agentruns
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - control.benchhandoff.dev
+    resources:
+      - agentruns/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch

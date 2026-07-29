@@ -1,0 +1,21 @@
+version = 3
+name = "agentrun-kind-e2e"
+
+[context]
+path = "context.json"
+media_type = "application/vnd.benchhandoff.agentrun-e2e+json"
+digest = "sha256:51a28d53662573296c67e656c9aea25648f9588e070e1c0c40c626dd43e63acc"
+size = 99
+
+[workspace]
+root = "workspace"
+manifest = "workspace.snapshot.json"
+digest = "sha256:6e62bfed71945dcedabc2ef6e634b4c5ab4a93142f1eacf5997996782e5bd027"
+size = 483
+policy = "closed-world-primary-stream-v1"
+
+[[task]]
+id = "fail-once"
+argv = ["python", "worker.py"]
+inputs = ["context.json", "input.txt", "worker.py"]
+outputs = ["result.txt"]

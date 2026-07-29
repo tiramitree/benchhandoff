@@ -1,0 +1,14 @@
+apiVersion: control.benchhandoff.dev/v1alpha1
+kind: AgentRun
+metadata:
+  name: wrong-suite-digest
+  namespace: benchhandoff-e2e
+  labels:
+    test.benchhandoff.dev/case: wrong-suite-digest
+spec:
+  execution:
+    pvcName: benchhandoff-e2e-data
+    suitePath: wrong-suite-digest/suite.toml
+    suiteSHA256: WRONG_SUITE_SHA256
+    runnerImage: RUNNER_IMAGE
+    activeDeadlineSeconds: 600
