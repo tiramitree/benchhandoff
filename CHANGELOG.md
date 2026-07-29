@@ -3,6 +3,81 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
+## 0.4.0 - 2026-07-29
+
+AgentRun code-bearing commit
+`pre-rewrite-commit-retired` completed the public pinned
+single-node Kubernetes
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+Commit `pre-rewrite-commit-retired` completed all ten Python,
+privacy, evidence, and exact-distribution jobs in public
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+These are maintainer-operated synthetic results, not production, independent,
+performance, or external-adoption evidence.
+
+### Added
+
+- A namespaced `control.benchhandoff.dev/v1alpha1` `AgentRun` CRD with an
+  immutable execution spec and a write-once resume approval.
+- A Go controller that binds deterministic start/resume/verify Jobs to the
+  `AgentRun` UID, canonical execution-spec SHA-256, exact owner reference,
+  audited template, live Job UID, and one owned Pod.
+- A path-free, canonical 1 KiB termination-message protocol between the Python
+  runner bridge and the manager. The manager does not read Pod logs or PVC
+  bytes.
+- `benchhandoff.controller_step`, which requires a version 3 suite, checks its
+  raw byte digest before parsing and again at engine entry, performs one bound
+  action, and emits only registered result fields and error categories.
+- A distinct verify Job after either start or resume completion. `Succeeded`
+  requires a fresh verification result with the same run and bundle identities.
+- Non-root runner Jobs with a read-only root filesystem, disabled service
+  account token and service links, dropped capabilities, runtime-default
+  seccomp, and no privilege escalation.
+- Pinned, disposable kind E2E coverage for deliberate failure, exact approval,
+  bound resume, fresh verify, manager restart/adoption, suite drift, wrong
+  approval, duplicate Pod rejection, race tests, and bounded cleanup.
+
+### Fail-closed boundaries
+
+- Execution-affecting Job drift, missing or duplicate Jobs, a replaced Job UID,
+  a foreign or duplicate matching Pod, malformed termination data, mismatched
+  run/spec/action identities, and failed fresh verification move the resource
+  to `Blocked`.
+- A digest-pinned runner image and suite SHA-256 bind bytes. They do not prove
+  provenance, safety, architecture compatibility, workload validity, or the
+  absence of external side effects.
+- Kubernetes rules using `oldSelf` are skipped on CREATE. A prefilled approval
+  can pass admission, but the controller blocks it as `PreseededApproval`
+  before creating any Job. Wrong first approval on UPDATE is rejected, and an
+  accepted approval cannot later be changed or removed.
+- Manager restart/adoption is tested for one replica in one single-node kind
+  cluster. There is no high-availability, leader-election, network-partition,
+  multi-cluster, storage-fencing, or distributed-lease evidence.
+- Resume remains at-least-once. The controller is not a sandbox, workload
+  authorization service, general scheduler, exactly-once system, production
+  operator, or supported deployment.
+- The checked-in Kustomize deployment contains an E2E image placeholder. No
+  controller image, Helm chart, production installer, or compatibility matrix
+  is published.
+
+### Validation notes
+
+- The kind gate used Go 1.26.5, kind v0.32.0, Kubernetes v1.36.1, Kubernetes Go
+  modules v0.36.0, and digest-pinned runner and registry images.
+- The kind workflow passed Go formatting, module verification, `go vet`, and
+  `go test -race ./...` before exercising the real API server and Jobs.
+- Every Ubuntu 24.04 and Windows Server 2025 job across CPython 3.11 through
+  3.14 ran 226 tests without failures, errors, or skips at `pre-rewrite-commit-retired...`.
+- The first public Python matrix on `pre-rewrite-commit-retired...` exposed a test-helper race in
+  marker publication on Windows/Python 3.14. The helper now writes a candidate
+  and atomically replaces the visible marker; ten repeated local Windows runs
+  and the full public matrix passed after the repair.
+
+See
+[`AGENTRUN_CONTROLLER.md`](docs/AGENTRUN_CONTROLLER.md)
+for the protocol, API example, reproduction command, and complete claim
+boundary.
+
 ## 0.3.0 - 2026-07-28
 
 Code-bearing commit `pre-rewrite-commit-retired`

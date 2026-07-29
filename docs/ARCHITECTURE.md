@@ -54,6 +54,37 @@ keeps its reviewed manifest outside that workspace. In every version, the run
 tree contains ledger evidence and must be outside and separate from the suite
 tree so a task output cannot overwrite its own plan or state.
 
+## Optional AgentRun control plane
+
+Version 0.4 adds an optional Kubernetes `AgentRun` control plane around the
+same strict version 3 engine:
+
+```text
+AgentRun + immutable execution spec
+              |
+              v
+ deterministic start Job
+              |
+       failed + decision
+              v
+       AwaitingApproval
+              |
+       exact write-once digest
+              v
+ resume Job -> verify Job -> Succeeded
+```
+
+The Go manager binds each Job to the `AgentRun` UID, a canonical execution-spec
+SHA-256, an exact audited template, the live Job UID, and one owned Pod. The
+Python bridge performs one engine action over a PVC and returns a bounded,
+path-free termination message. The manager does not read Pod logs, suite
+bytes, or run evidence.
+
+This layer is lifecycle orchestration, not a new evidence protocol. Version 3
+still defines suite, run, workspace, resume, and bundle semantics. See
+[`AGENTRUN_CONTROLLER.md`](AGENTRUN_CONTROLLER.md) for approval, restart,
+security, and validation boundaries.
+
 ## Durable records
 
 `plan.json` is immutable after creation. `state.json` is replaced atomically per

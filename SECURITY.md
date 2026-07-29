@@ -21,12 +21,38 @@ cooperating local BenchHandoff mutation entrypoints. Do not use them as
 authorization, hostile-writer protection, distributed fencing, or remote
 leases. Device-id comparison also does not detect every same-device bind mount.
 
+## AgentRun security boundary
+
+The optional version 0.4 `AgentRun` controller orchestrates the same version 3
+engine through Kubernetes Jobs. It does not make an untrusted suite, image,
+cluster, or PVC safe. Any principal that may update
+`spec.resumeDecisionSHA256` can submit the exact published approval value; the
+digest is a content binding, not a credential, signature, human identity, or
+authorization decision. Use Kubernetes RBAC and admission policy to control
+who may create or update `AgentRun` objects.
+
+The checked-in manager role can read `AgentRun` objects, update their status,
+create and observe Jobs, and observe Pods. It has no Secret permissions. The
+manager needs its Kubernetes service-account token for those API operations;
+generated runner Jobs disable token mounting. Runner settings such as non-root
+execution, a read-only root filesystem, dropped capabilities, and
+runtime-default seccomp narrow the generated Pod template, but they do not
+restrict PVC writes, network access, workload side effects, or a hostile image.
+
+The controller trusts live Kubernetes object identity and one bounded
+termination message. Those records are not signed or remotely attested. A
+principal with sufficient cluster privileges can alter resources the controller
+trusts. The only observed deployment is one manager in one single-node kind
+cluster; there is no multi-replica, high-availability, production-isolation, or
+general Kubernetes compatibility claim. See
+[the AgentRun controller boundary](docs/AGENTRUN_CONTROLLER.md).
+
 ## Supported versions
 
-Versions 0.1.0 through 0.3.0 are early GitHub versions, not supported
-production lines. Security reports may identify `v0.1.0`, `v0.2.0`, `v0.3.0`,
-or another exact `main` commit. There is no response-time, remediation-time,
-compatibility, or maintenance commitment.
+Versions 0.1.0 through 0.4.0 are early GitHub version lines, not supported
+production lines. Security reports may identify an exact tag or full commit.
+There is no response-time, remediation-time, compatibility, or maintenance
+commitment.
 
 ## Reporting a vulnerability
 

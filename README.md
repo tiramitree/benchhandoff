@@ -1,12 +1,18 @@
-# BenchHandoff v0.3.0
+# BenchHandoff v0.4.0
 
 [![CI](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
+[![AgentRun real kind E2E](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml)
 
-BenchHandoff is a narrow local CLI for resuming a flat, sequential batch of
-expensive commands. It fingerprints the suite and declared inputs, records
-per-task logs and declared-output hashes, and skips a previously completed task
-only when those outputs still re-verify. It turns a `suite.toml` into three
-reviewable records:
+BenchHandoff is a narrow evidence engine for resuming a flat, sequential batch
+of expensive commands. The Python CLI runs locally. Version 0.4 also includes
+an optional early-alpha Kubernetes `AgentRun` controller that schedules the
+same version 3 protocol as deterministic Jobs over one PVC; it does not turn
+the engine into a general distributed scheduler.
+
+The engine fingerprints the suite and declared inputs, records per-task logs
+and declared-output hashes, and skips a previously completed task only when
+those outputs still re-verify. It turns a `suite.toml` into three reviewable
+records:
 
 - `plan.json`: the exact suite, seed-input identities, runtime facts, and task
   order accepted before execution;
@@ -35,6 +41,44 @@ forks, and maintainer-authored examples are not external-adoption evidence.
 BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
 scheduler, sandbox, cryptographic attestation service, or guarantee of full
 reproducibility.
+
+## What v0.4 adds
+
+`control.benchhandoff.dev/v1alpha1` defines one namespaced `AgentRun`. Its
+immutable execution spec binds a PVC, normalized suite path, exact suite
+SHA-256, digest-pinned runner image, and bounded deadline. The Go manager
+creates one deterministic `start`, `resume`, or `verify` Job at a time and
+accepts only an exact owner UID, canonical execution-spec digest, audited Job
+template, live Job UID, single owned Pod, and bounded termination message.
+
+A failed start publishes a deterministic resume-decision SHA-256 and stops at
+`AwaitingApproval`. Copying that exact digest into the write-once spec field
+allows a bound resume; a distinct verify Job must then re-open the bundle and
+return the same run and bundle identities before the resource becomes
+`Succeeded`. Manager restart/adoption re-lists the live Job and refuses
+missing, additional, replaced, foreign, or template-drifted objects.
+
+Runner Pods use no service-account token or service links, run as non-root
+UID/GID 65532 with a read-only root filesystem, drop every capability, disable
+privilege escalation, and use runtime-default seccomp. These settings narrow
+the registered Job template; they are not a workload sandbox, tenant-isolation
+claim, or proof that the runner image is safe.
+
+Kubernetes transition rules reject a wrong first approval and make the accepted
+digest write-once. Rules using `oldSelf` are skipped on CREATE, so a prefilled
+approval can pass admission; the controller detects it before creating a Job
+and moves the run to `Blocked` with reason `PreseededApproval`. The decision
+digest is review data, not a credential or authorization token.
+
+The public pinned single-node kind gate covers deliberate failure, exact
+approval, bound resume, fresh verify, manager restart/adoption, suite drift,
+wrong approval, duplicate Pod rejection, Go race tests, and bounded cleanup.
+It does not establish high availability, exactly-once side effects,
+multi-cluster coordination, production reliability, independent review, or
+external adoption.
+
+See [AgentRun controller](docs/AGENTRUN_CONTROLLER.md) for the API, bindings,
+reproduction command, observed public run, and explicit non-claims.
 
 ## What v0.3 adds
 
@@ -128,17 +172,21 @@ guarantee. See [LIMITATIONS.md](LIMITATIONS.md).
 
 ## Requirements and implemented execution targets
 
-- Python 3.11 or newer. The v0.3.0 code-bearing main-branch public CI covered
+- Python 3.11 or newer. The v0.4 code-bearing public CI covered
   CPython 3.11 through 3.14 on Ubuntu 24.04 and Windows Server 2025.
 - Windows or Linux for child execution. Linux requires `/proc` so the runner can
   bind a PID to a stable process-start identity and inspect version 2 process
   groups.
-- No third-party runtime packages.
+- The Python engine has no third-party runtime packages.
 - A suite directory and a separate run-evidence directory. Version 3 also
   requires one dedicated `workspace.root` and a reviewed manifest outside that
   root.
 - The suite, every output's existing parent, and the run/quarantine directory
   must be on the same filesystem so quarantine moves cannot cross devices.
+- The optional controller uses Go 1.26 and pinned Kubernetes/client libraries.
+  Its one observed integration target is kind v0.32.0 with Kubernetes v1.36.1.
+  It requires a writable PVC populated with version 3 suites and a digest-pinned
+  runner image. No controller image or production installer is published.
 
 macOS and other operating systems are not supported for execution. A new start
 rejects them before creating the run directory; resume rechecks support before
@@ -146,6 +194,37 @@ any child launch. The optional package build uses setuptools. Running from
 source needs no install.
 
 ## Validation status
+
+The AgentRun code-bearing commit
+`pre-rewrite-commit-retired` completed the public pinned
+single-node
+[kind run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+on 2026-07-29. It passed Go formatting, module verification, vet, and race
+tests, then completed the deliberate version 3 failure -> exact approval ->
+resume -> fresh verify lifecycle. The same gate restarted the manager and
+adopted the exact live Job, classified changed suite bytes as
+`evidence_invalid`, rejected a wrong approval at admission, blocked a duplicate
+matching Pod, ran the runner non-root with a read-only root, and passed its
+bounded registry/cluster/scratch cleanup checks.
+
+Commit `pre-rewrite-commit-retired` completed all ten jobs in
+public
+[CI run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+Each of the eight Ubuntu 24.04 and Windows Server 2025 jobs across CPython 3.11
+through 3.14 ran 226 tests without failures, errors, or skips. The dependent
+jobs generated and re-verified the canonical synthetic package and built,
+privacy-checked, installed, and smoked the exact wheel and sdist.
+
+The preceding run on `pre-rewrite-commit-retired...` exposed a pre-existing Windows test-helper
+race: the parent could observe a newly created marker before the child finished
+writing its JSON. `pre-rewrite-commit-retired...` changed that test helper to publish the complete
+marker by same-directory atomic replacement; ten repeated local Windows
+process-family runs and the complete public matrix then passed.
+
+These are maintainer-operated synthetic results from one kind environment and
+one operating-system/Python matrix. They are not external use, independent
+reproduction, production reliability, real-workload performance, or a general
+Kubernetes compatibility claim.
 
 The v0.3.0 code-bearing commit
 `pre-rewrite-commit-retired` completed all ten jobs in public
@@ -226,6 +305,30 @@ CI results, not independent reproduction, production reliability, or adoption.
 
 ## GitHub release
 
+[v0.4.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.4.0) is the
+version documented by this source. Treat it as a completed GitHub-only
+early-alpha release only when that link resolves to an annotated tag, a final
+Release, and the exact CI-built wheel, sdist, and `SHA256SUMS`. Before those
+surfaces exist, version 0.4.0 is only a source candidate.
+
+The version 0.4 release scope does not include a controller image. The Go
+manager, CRD, reference Kustomize manifests, and kind gate are source-only.
+Neither the Python distribution nor the GitHub Release establishes Kubernetes
+production support, external use, independent reproduction, or adoption.
+
+[v0.3.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.3.0) is the
+previous completed GitHub-only early-alpha release recorded by this source
+under Apache-2.0. Its annotated tag peels to release commit
+`pre-rewrite-commit-retired`, and
+public tag
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+completed all ten jobs. The three attached assets are the CI-built wheel,
+sdist, and `SHA256SUMS`. The wheel is 78,077 bytes with SHA-256
+`6b4a1e097486beb928d23b26db918b2f1f897f5b0bda9d81bc1e2bf6045732f0`;
+the sdist is 139,395 bytes with SHA-256
+`e744c5f58eb289e0f409d6e734f1e719d58e73cf9bc710fd46bb904d5da04167`.
+
+The earlier
 [v0.2.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.2.0) is a
 GitHub-only early-alpha release under Apache-2.0. Its annotated tag peels to
 release commit `pre-rewrite-commit-retired`. The eight attached
@@ -238,11 +341,11 @@ All eight Release downloads were compared byte-for-byte with the CI artifacts,
 and the downloaded wheel repeated the version 1 and version 2 installed-package
 smoke checks.
 
-The earlier
+The still-earlier
 [v0.1.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.1.0) remains
-available. No TestPyPI or PyPI package has been published. Neither GitHub
-release creates a supported production line, independent reproduction, or
-external-adoption evidence.
+available. No TestPyPI or PyPI package has been published. No GitHub release,
+including v0.3.0, creates a supported production line, independent
+reproduction, or external-adoption evidence.
 
 On 2026-07-25, the local Windows preflight exercised CPython 3.11.15, 3.12.13,
 3.13.14, and 3.14.6. Each runtime completed the 122-test suite with 119 passes
@@ -650,6 +753,7 @@ review, deduplication, retraction, and validator boundary.
 
 - [Evidence format](docs/EVIDENCE_FORMAT.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [AgentRun Kubernetes controller](docs/AGENTRUN_CONTROLLER.md)
 - [Version 2 execution context and process scope](docs/EXECUTION_CONTEXT_AND_PROCESS_SCOPE.md)
 - [Version 3 closed-world workspace integrity](docs/CLOSED_WORLD_WORKSPACE_INTEGRITY.md)
 - [Recovery example](examples/recovery_pipeline/README.md)

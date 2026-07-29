@@ -1,6 +1,6 @@
 # Limitations
 
-BenchHandoff v0.3.0 is a narrow local run-evidence CLI, not a security sandbox,
+BenchHandoff v0.4.0 is a narrow run-evidence engine, not a security sandbox,
 hostile-writer boundary, or distributed workflow engine.
 
 ## Implemented execution targets
@@ -110,6 +110,57 @@ in scope.
   entrypoints that share that workspace; it is not authorization or protection
   against direct filesystem mutation.
 
+## AgentRun controller boundary
+
+- The v0.4 controller is an optional early-alpha reference control plane. The
+  only observed integration target is one manager and one node in kind v0.32.0
+  with Kubernetes v1.36.1. Other Kubernetes releases, storage classes,
+  container runtimes, architectures, admission stacks, and network policies
+  have not been validated.
+- An `AgentRun` schedules only strict version 3 suites from one writable PVC.
+  The controller neither provisions nor snapshots that PVC and does not fence
+  direct writers. A workload with PVC access retains the storage permissions
+  assigned by the cluster.
+- The execution spec is immutable and its runner image must be digest-pinned.
+  Image-manifest identity does not prove publisher identity, source
+  reproducibility, vulnerability status, architecture support, or runtime
+  safety.
+- The resume-decision digest is public review data in status/spec. It is not a
+  password, signature, user identity, authorization token, or approval audit
+  with a human principal. Cluster RBAC and admission policy decide who may
+  create or update an `AgentRun`.
+- CEL transition rules using `oldSelf` do not execute on CREATE. A prefilled
+  approval can therefore pass CRD admission; the controller blocks it as
+  `PreseededApproval` before creating a Job. This is controller-enforced, not a
+  CREATE-time admission guarantee.
+- The manager uses uncached reads before decisions about live Job/Pod identity,
+  but it still depends on API-server availability and the consistency
+  guarantees of the Kubernetes API and storage. An API error is retried or
+  blocks progress; it is not treated as reliable absence.
+- Deterministic Job names and live UID bindings allow one tested manager restart
+  to adopt an exact Job. They do not prove multi-replica safety, leader
+  election, availability during partitions, multi-cluster failover, remote
+  leases, or distributed fencing.
+- Each Job has one completion, one worker, zero retries, and one active
+  deadline. Kubernetes or node failure can still interrupt work. Deleting or
+  replacing an `AgentRun`, Job, Pod, PVC, or its evidence is outside the
+  automatic recovery contract.
+- The manager accepts one bounded termination message from one Job-owned Pod.
+  Kubernetes status is not a signed or remotely attested channel, and a party
+  with sufficient cluster privileges can alter the objects the controller
+  trusts.
+- The runner's non-root UID, read-only root, dropped capabilities, disabled
+  service-account token, and seccomp profile narrow the generated template.
+  They do not restrict PVC writes, network access, node/kernel attacks,
+  workload side effects, or a hostile image.
+- The checked-in Kustomize manager image is an E2E placeholder. There is no
+  published controller image, Helm chart, upgrade/migration mechanism,
+  production configuration, compatibility matrix, or support commitment.
+- The public kind test uses synthetic local fixtures and one disposable
+  registry. It does not measure throughput, latency, scale, noisy-neighbor
+  behavior, long-duration stability, production recovery, or real model/agent
+  quality.
+
 ## Recovery and atomicity
 
 - Resume is at-least-once, not exactly-once. If a child completed but the runner
@@ -208,11 +259,17 @@ in scope.
 
 ## Claim boundary
 
-Recorded v0.3 validation is maintainer-operated and synthetic, including the
-211-test Ubuntu/Windows matrix, evidence generation, and exact-distribution
-smoke in public main-branch
+Recorded v0.4 validation is maintainer-operated and synthetic. It includes the
+226-test Ubuntu/Windows matrix, evidence generation, and exact-distribution
+smoke in public
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+plus one pinned single-node Kubernetes lifecycle in
 [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+The runs bind different exact commits; the later commit changes only the
+Windows process-family test marker, not the controller implementation.
+
 No claim is made about production use, external users, independent
-reproduction, real-workload performance, or compatibility with a specific
-embodied-simulation stack. A GitHub tag or release is a distribution event; it
-does not establish any of those external claims.
+reproduction, real-workload performance, a general Kubernetes compatibility
+range, or compatibility with a specific embodied-simulation stack. A GitHub
+tag or Release is a distribution event; it does not establish any of those
+external claims.

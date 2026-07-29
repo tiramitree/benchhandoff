@@ -4,19 +4,19 @@ This is a manual, fail-closed checklist for BenchHandoff releases. CI builds
 downloadable artifacts, but no package-registry publishing workflow is
 enabled.
 
-Versions `v0.1.0` and `v0.2.0` are GitHub-only early releases under
-Apache-2.0. Each tag, GitHub Release, and attached asset set binds to one exact
-public-CI-tested commit. Every later release must repeat the same exact-commit
+BenchHandoff version lines are GitHub-only early releases under Apache-2.0.
+Each tag, GitHub Release, and attached asset set binds to one exact
+public-CI-tested commit. Every release must repeat the same exact-commit
 gates. There is no TestPyPI or PyPI publication, supported production line, or
 external-adoption claim.
 
-Version `0.3.0` code-bearing commit
-`pre-rewrite-commit-retired` completed exact-commit public
-main-branch CI
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-Its release-preparation commit must repeat the same gates before tagging.
-Neither those gates nor a tag or Release establishes adoption, production
-compatibility, or performance.
+The `v0.3.0` annotated tag peels to release commit
+`pre-rewrite-commit-retired`. Exact tag
+[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
+completed all ten jobs before the three CI-built distribution assets were
+attached. This is a historical release record, not a substitute for repeating
+the gates on a later candidate. Neither those gates nor a tag or Release
+establishes adoption, production compatibility, or performance.
 
 ## 1. Resolve release blockers
 
@@ -104,6 +104,31 @@ claim is limited to Windows, Linux, and macOS with the required native
 primitive; missing support must fail closed. See
 [`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](CLOSED_WORLD_WORKSPACE_INTEGRITY.md).
 
+For a version 0.4 `AgentRun` candidate, additionally stop unless:
+
+- Go formatting, `go mod tidy -diff`, module verification, `go vet`, and
+  `go test -race ./...` pass on the exact candidate;
+- the pinned real-API kind workflow succeeds on that exact candidate, including
+  failure, approval, resume, fresh verify, manager restart/adoption, suite
+  drift, wrong approval, duplicate Pod rejection, runner security-context
+  checks, and bounded cleanup;
+- the release notes identify the exact kind, Kubernetes, kubectl, Go, and
+  Kubernetes-module versions used by that one observed gate;
+- the release notes state that the decision digest is not a credential, that
+  CREATE-time preseeded approval is controller-blocked rather than
+  admission-rejected, and that status and termination messages are not signed
+  or remotely attested;
+- the release notes preserve the no-sandbox, at-least-once, single-manager,
+  single-node, no-HA, no-general-compatibility, and no-production boundaries;
+  and
+- the source and distribution privacy gates pass without publishing raw
+  manifests, suite paths, PVC contents, Pod logs, or run evidence.
+
+The checked-in manager image is a test placeholder. Unless an exact public
+image is separately built, privacy-gated, digest-bound, and explicitly
+released, the controller remains source-only. A Python wheel or source archive
+does not contain or publish a controller image.
+
 Also run:
 
 ```bash
@@ -167,9 +192,11 @@ For a GitHub-only release:
 3. compare the downloaded files to the workflow's recorded SHA-256 values;
 4. create the final tag on the exact candidate commit;
 5. create the GitHub Release for that tag;
-6. attach the same wheel, sdist, `SHA256SUMS`, and five verified synthetic
-   evidence files; and
-7. download every release asset again and verify exact names, sizes, hashes,
+6. attach the same wheel, sdist, and `SHA256SUMS`; attach synthetic evidence
+   only when the release scope explicitly calls for those exact privacy-gated
+   CI bytes, and never attach raw run directories or logs; and
+7. download every attached release asset again and verify exact names, sizes,
+   hashes,
    metadata, and the installed-wheel smoke path.
 
 State all observed skips and limitations. Do not rebuild release assets after

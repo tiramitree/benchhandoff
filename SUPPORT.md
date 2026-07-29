@@ -1,7 +1,7 @@
 # Support
 
-BenchHandoff has one GitHub-only early release and no package-registry release,
-support SLA, guaranteed response time, compatibility promise, or
+BenchHandoff has GitHub-only early releases and no package-registry release,
+support SLA, guaranteed response time, Kubernetes compatibility promise, or
 production-support commitment.
 
 Use the repository's structured issue forms for reproducible bugs, independent
@@ -17,6 +17,11 @@ Before filing an issue:
 4. run `benchhandoff verify RUN_DIR` when that is safe and relevant; and
 5. describe the observed exit code and failure category without pasting
    sensitive output.
+
+For an `AgentRun` report, also identify the exact controller commit and
+Kubernetes versions, and reduce the case to synthetic manifests. Do not publish
+a real PVC name, suite path, namespace, cluster endpoint, Pod log, termination
+message from a private workload, or raw custom resource.
 
 Never upload a raw run directory, command log, absolute path, local username,
 token, credential, private dataset, environment dump, or confidential command

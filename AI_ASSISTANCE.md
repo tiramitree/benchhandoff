@@ -1,14 +1,17 @@
 # AI Assistance Disclosure
 
 This implementation, including the v0.2 execution-context and process-scope
-work, its tests, and its documentation, was drafted
-with OpenAI Codex assistance under the user's direction.
+work, the v0.3 closed-world workspace boundary, and the v0.4 optional
+`AgentRun` controller, tests, and documentation, was drafted with OpenAI Codex
+assistance under the user's direction.
 
 The assistant:
 
 - translated the stated reliability requirements into a new implementation;
-- wrote source code, tests, examples, and documentation;
-- ran the repository's unit tests and synthetic benchmark locally; and
+- wrote Python and Go source code, Kubernetes manifests, tests, examples, and
+  documentation;
+- ran repository unit, race, synthetic benchmark, and disposable kind
+  integration checks locally or in public CI as explicitly reported; and
 - reported test boundaries and known limitations.
 
 No production deployment, independent user, upstream acceptance, performance

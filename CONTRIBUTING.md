@@ -7,8 +7,9 @@ that it will be accepted.
 
 ## Before opening a change
 
-- Keep the project narrow: a local, sequential, resumable command runner with
-  reviewable evidence.
+- Keep the project narrow: a sequential, resumable command runner with
+  reviewable evidence and one optional bounded Kubernetes `AgentRun`
+  lifecycle.
 - Open an issue before a large behavioral or evidence-format change.
 - Do not submit private datasets, credentials, tokens, raw run directories,
   command logs, local usernames, absolute paths, or employer/university
@@ -34,6 +35,17 @@ python -m unittest discover -s tests -v
 python -m compileall -q src tests tools benchmarks examples
 ```
 
+The optional controller requires Go 1.26:
+
+```powershell
+Push-Location controller
+go mod tidy -diff
+go mod verify
+go vet -mod=readonly ./...
+go test -mod=readonly -race ./...
+Pop-Location
+```
+
 On a POSIX shell:
 
 ```bash
@@ -42,6 +54,21 @@ python tools/verify_external_evidence.py
 PYTHONPATH=src python -m unittest discover -s tests -v
 python -m compileall -q src tests tools benchmarks examples
 ```
+
+```bash
+cd controller
+go mod tidy -diff
+go mod verify
+go vet -mod=readonly ./...
+go test -mod=readonly -race ./...
+cd ..
+```
+
+The registered real-API integration gate is
+`bash controller/test/e2e/run_kind.sh`. It requires Linux, Docker, outbound
+access to pinned downloads and images, and enough resources for its disposable
+kind node and local registry. Review the script's exact bounded resource names
+and cleanup report before using it on a shared Docker host.
 
 Tests that create symlinks can be skipped when the operating system or account
 does not permit symlink creation. Report skips separately from passes; never
