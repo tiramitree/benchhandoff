@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentrun-controller-leader-election
+  namespace: benchhandoff-system
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    resourceNames:
+      - agentrun-controller.benchhandoff.dev
+    verbs:
+      - get
+      - update

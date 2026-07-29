@@ -1,7 +1,8 @@
 # Limitations
 
-BenchHandoff v0.4.0 is a narrow run-evidence engine, not a security sandbox,
-hostile-writer boundary, or distributed workflow engine.
+BenchHandoff v0.5.0 is currently an unreleased candidate. BenchHandoff remains
+a narrow run-evidence engine, not a security sandbox, hostile-writer boundary,
+or distributed workflow engine. The current completed release is v0.4.0.
 
 ## Implemented execution targets
 
@@ -112,11 +113,25 @@ in scope.
 
 ## AgentRun controller boundary
 
-- The v0.4 controller is an optional early-alpha reference control plane. The
-  only observed integration target is one manager and one node in kind v0.32.0
-  with Kubernetes v1.36.1. Other Kubernetes releases, storage classes,
-  container runtimes, architectures, admission stacks, and network policies
-  have not been validated.
+- The released v0.4 controller is an optional early-alpha reference control
+  plane. Its observed integration target is one manager and one node in kind
+  v0.32.0 with Kubernetes v1.36.1. The unreleased v0.5 candidate changes the
+  reference deployment to exactly two managers using one namespaced Lease, but
+  its real-kind and public-CI gates have not yet run. Other Kubernetes releases,
+  storage classes, container runtimes, architectures, admission stacks, and
+  network policies have not been validated.
+- The candidate Lease settings are fixed at a 15-second duration, 10-second
+  renew deadline, and 2-second retry period with
+  `LeaderElectionReleaseOnCancel=false`. These are coordination parameters, not
+  fencing tokens or a proof that an old leader cannot act during a partition.
+  The registered gate assumes the API server and its storage remain available.
+- The candidate precreates the exact leader-election Lease. Its Role is
+  namespaced to `benchhandoff-system`, restricted by `resourceNames`, and
+  permits only `get` and `update` on that object. It cannot create or recreate
+  the Lease, list or watch Leases, patch or delete it, update another Lease in
+  the namespace, or read a Lease in another namespace. The broader
+  AgentRun/Job/Pod reference ClusterRole remains separate and still requires
+  deployment-specific review.
 - An `AgentRun` schedules only strict version 3 suites from one writable PVC.
   The controller neither provisions nor snapshots that PVC and does not fence
   direct writers. A workload with PVC access retains the storage permissions
@@ -137,10 +152,32 @@ in scope.
   but it still depends on API-server availability and the consistency
   guarantees of the Kubernetes API and storage. An API error is retried or
   blocks progress; it is not treated as reliable absence.
-- Deterministic Job names and live UID bindings allow one tested manager restart
-  to adopt an exact Job. They do not prove multi-replica safety, leader
-  election, availability during partitions, multi-cluster failover, remote
-  leases, or distributed fencing.
+- Deterministic Job names and live UID bindings allow released v0.4 to adopt an
+  exact Job after one tested manager restart. The v0.5 candidate additionally
+  observes the deterministic name and complete action-labelled Job set through
+  uncached reads after create or `AlreadyExists`, then accepts only one matching
+  server UID and complete audited template. Unknown create errors requeue; they
+  are not evidence of absence and do not authorize a second Job name.
+- A candidate status-update conflict discards the stale object and schedules a
+  fresh reconcile. The controller does not blindly retry a stale status patch.
+  A different Job UID from the one already bound in status blocks the run.
+- The create/`AlreadyExists`, committed-response-loss, and status-conflict
+  windows are exercised by bounded fake-client fault-injection unit tests. The
+  real-kind takeover gate begins only after `activeJobRef`, its Job, and its Pod
+  are established; it tests continuity across holder deletion, not a leader
+  exit inside those earlier windows.
+- The registered v0.5 gate starts only from a clean exact commit. While a
+  paused synthetic `start` Job is live, and again for `resume`, it binds one
+  stable Lease version to both manager Pod UIDs, cordons the single node,
+  UID-precondition deletes the holder, and accepts only the pre-existing
+  non-holder Pod acquiring exactly the next transition. It then uncordons the
+  node and requires the measured Job/Pod identities and counts to remain one.
+  Until that real-kind gate and public CI pass on an immutable commit, these
+  are implemented test conditions, not observed takeover evidence.
+- Even after those fixed gates pass, they do not establish strict fencing,
+  availability during network partitions, arbitrary Pod recovery, multi-node
+  or multi-cluster availability, exactly-once execution, or production high
+  availability.
 - Each Job has one completion, one worker, zero retries, and one active
   deadline. Kubernetes or node failure can still interrupt work. Deleting or
   replacing an `AgentRun`, Job, Pod, PVC, or its evidence is outside the
@@ -156,10 +193,11 @@ in scope.
 - The checked-in Kustomize manager image is an E2E placeholder. There is no
   published controller image, Helm chart, upgrade/migration mechanism,
   production configuration, compatibility matrix, or support commitment.
-- The public kind test uses synthetic local fixtures and one disposable
-  registry. It does not measure throughput, latency, scale, noisy-neighbor
-  behavior, long-duration stability, production recovery, or real model/agent
-  quality.
+- The public v0.4 kind test uses synthetic local fixtures and one disposable
+  registry. The candidate v0.5 gate would additionally produce one bounded
+  privacy-gated takeover record and checksum, but it has not yet run. Neither
+  gate measures throughput, latency, scale, noisy-neighbor behavior,
+  long-duration stability, production recovery, or real model/agent quality.
 
 ## Recovery and atomicity
 
@@ -259,6 +297,15 @@ in scope.
 
 ## Claim boundary
 
+The current unreleased v0.5 local checkpoint reports public-privacy PASS,
+229 Python passes with 4 Windows capability skips and no failures or errors,
+and PASS for Go formatting, module-tidiness verification, module verification,
+`go vet`, and unit tests. A trimpath manager build passed locally with
+`-buildvcs=false`, required because this worktree is nested inside another
+local repository boundary. The Go race test is unavailable in the current
+local Windows environment. Real kind and public CI have not yet run for v0.5.
+These mutable local observations are not release or takeover evidence.
+
 Recorded v0.4 validation is maintainer-operated and synthetic. It includes the
 226-test Ubuntu/Windows matrix, evidence generation, and exact-distribution
 smoke in public
@@ -267,6 +314,13 @@ plus one pinned single-node Kubernetes lifecycle in
 [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
 The runs bind different exact commits; the later commit changes only the
 Windows process-family test marker, not the controller implementation.
+
+The final v0.4 release commit remains
+`pre-rewrite-commit-retired`, with recorded real-kind run
+[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+tag CI
+[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+and GitHub Release record `pre-rewrite-release-retired`. Those facts do not transfer to v0.5.
 
 No claim is made about production use, external users, independent
 reproduction, real-workload performance, a general Kubernetes compatibility

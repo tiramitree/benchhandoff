@@ -18,13 +18,22 @@ attached. This is a historical release record, not a substitute for repeating
 the gates on a later candidate. Neither those gates nor a tag or Release
 establishes adoption, production compatibility, or performance.
 
+The current completed `v0.4.0` release commit is
+`pre-rewrite-commit-retired`. Its recorded real-kind run is
+[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+its recorded tag CI is
+[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+and its GitHub Release record is `pre-rewrite-release-retired`. These historical facts do not
+substitute for any v0.5 candidate gate.
+
 ## 1. Resolve release blockers
 
 Stop unless every item is complete:
 
-1. The owner has explicitly selected the license.
-2. The pending LICENSING_STATUS.md has been removed, and the exact license
-   text and package metadata agree.
+1. `LICENSE`, package metadata, source headers where present, and release notes
+   all retain the already-selected Apache-2.0 license.
+2. `python tools/verify_license_state.py --require-final` passes. A pending
+   licensing notice or any alternative-license metadata is a blocker.
 3. Ownership, AI-assistance disclosure, fixtures, and third-party provenance
    have been reviewed.
 4. The project and package names have been rechecked immediately before
@@ -35,44 +44,16 @@ Stop unless every item is complete:
    a public issue is not the security-reporting fallback.
 7. The candidate commit is clean, immutable, and identified by full SHA.
 
-If the license remains pending, do not build a publishable candidate, upload to
-TestPyPI, create a public repository, tag a release, or distribute artifacts.
-
-The state validator accepts either the documented pending state or one exact
-final state:
-
-```bash
-python tools/verify_license_state.py
-```
-
-`--require-final` rejects the pending state and is the package/release gate.
-The two allowed final choices are `Apache-2.0` and `MIT`. Their candidate bytes
-are bound to SPDX `license-list-data` commit
-`c4a7237ec8f4654e867546f9f409749300f1bf4c`. The MIT candidate replaces the
-template's `<year> <copyright holders>` with `2026 tiramitree`; no other
-license-text edits are accepted.
-
-After the owner explicitly chooses one option, keep the canonical candidate
-outside the checkout and first run the finalizer without `--apply`:
-
-```bash
-source_commit="$(git rev-parse HEAD)"
-python tools/finalize_license.py \
-  --license Apache-2.0 \
-  --license-file /absolute/path/to/canonical-candidate.txt \
-  --expected-source-commit "$source_commit"
-```
-
-Use `--license MIT` only if that is the owner's explicit choice. Review the
-JSON plan, then repeat the same command with `--apply`. The tool requires the
-exact clean source commit, writes `LICENSE`, adds PEP 639 metadata, raises the
-build backend floor to `setuptools>=77.0.3`, removes the pending notice, and
-verifies the resulting state. It does not commit, tag, upload, or publish.
-After application, run:
+The repository license is no longer a pending choice. Verify the final
+Apache-2.0 state directly:
 
 ```bash
 python tools/verify_license_state.py --require-final
 ```
+
+Do not rerun the historical license-finalization workflow or present MIT as a
+routine release option. Relicensing would be a separate legal and provenance
+decision requiring explicit owner review; it is outside this release checklist.
 
 ## 2. Validate the source commit
 
@@ -104,7 +85,7 @@ claim is limited to Windows, Linux, and macOS with the required native
 primitive; missing support must fail closed. See
 [`CLOSED_WORLD_WORKSPACE_INTEGRITY.md`](CLOSED_WORLD_WORKSPACE_INTEGRITY.md).
 
-For a version 0.4 `AgentRun` candidate, additionally stop unless:
+For a version 0.4 or later `AgentRun` candidate, additionally stop unless:
 
 - Go formatting, `go mod tidy -diff`, module verification, `go vet`, and
   `go test -race ./...` pass on the exact candidate;
@@ -119,9 +100,22 @@ For a version 0.4 `AgentRun` candidate, additionally stop unless:
   CREATE-time preseeded approval is controller-blocked rather than
   admission-rejected, and that status and termination messages are not signed
   or remotely attested;
-- the release notes preserve the no-sandbox, at-least-once, single-manager,
-  single-node, no-HA, no-general-compatibility, and no-production boundaries;
-  and
+- the release notes preserve the no-sandbox, at-least-once, single-node,
+  no-general-compatibility, and no-production boundaries;
+- for a v0.5 candidate, the exact Lease is precreated and its
+  `resourceNames`-restricted Role permits only `get` and `update`;
+- for a v0.5 candidate, each registered gate starts and ends on the same clean
+  commit, binds one stable Lease version to both manager Pod UIDs, cordons the
+  node, UID-precondition deletes the holder, requires the pre-existing passive
+  to acquire exactly the next transition, restores scheduling and two Ready
+  replicas, and preserves measured one-object start/resume Job and Pod
+  identities;
+- for a v0.5 candidate, the privacy-gated takeover JSON and its one-entry
+  checksum are the only two regular artifact files, pass the repository privacy
+  scanner, and are uploaded only by a successful trusted push or dispatch; the
+  release notes explicitly deny strict fencing, network-partition safety,
+  arbitrary Pod recovery, multi-node/multi-cluster availability, exactly-once,
+  and production HA; and
 - the source and distribution privacy gates pass without publishing raw
   manifests, suite paths, PVC contents, Pod logs, or run evidence.
 
@@ -190,8 +184,8 @@ source-tree test is not a substitute for this installed-wheel test.
 
 For a GitHub-only release:
 
-1. require complete green public ordinary CI and, for version 0.4, AgentRun
-   real-kind E2E runs on the exact candidate commit;
+1. require complete green public ordinary CI and, for version 0.4 or later,
+   AgentRun real-kind E2E runs on the exact candidate commit;
 2. create and push an annotated final tag on that exact commit;
 3. require the tag ref to peel to the candidate and wait for complete green
    ordinary CI and AgentRun real-kind E2E runs whose head SHA is the candidate;

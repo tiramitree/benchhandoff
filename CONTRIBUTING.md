@@ -9,7 +9,8 @@ that it will be accepted.
 
 - Keep the project narrow: a sequential, resumable command runner with
   reviewable evidence and one optional bounded Kubernetes `AgentRun`
-  lifecycle.
+  lifecycle. The unreleased v0.5 candidate adds only a fixed two-manager
+  namespaced-Lease takeover boundary.
 - Open an issue before a large behavioral or evidence-format change.
 - Do not submit private datasets, credentials, tokens, raw run directories,
   command logs, local usernames, absolute paths, or employer/university
@@ -42,9 +43,18 @@ Push-Location controller
 go mod tidy -diff
 go mod verify
 go vet -mod=readonly ./...
-go test -mod=readonly -race ./...
+go test -mod=readonly ./...
+go build -mod=readonly ./cmd/manager
 Pop-Location
 ```
+
+The Go race test is not available in the current local Windows environment. It
+remains a required supported-environment/public-CI gate; record it as not run,
+not as a pass.
+
+If Go VCS stamping selects an unrelated enclosing repository for a nested
+worktree, a local link smoke may add `-buildvcs=false`. Record that exact
+exception; it does not replace the ordinary clean-checkout build in public CI.
 
 On a POSIX shell:
 
@@ -60,15 +70,23 @@ cd controller
 go mod tidy -diff
 go mod verify
 go vet -mod=readonly ./...
+go test -mod=readonly ./...
 go test -mod=readonly -race ./...
+go build -mod=readonly ./cmd/manager
 cd ..
 ```
 
 The registered real-API integration gate is
 `bash controller/test/e2e/run_kind.sh`. It requires Linux, Docker, outbound
 access to pinned downloads and images, and enough resources for its disposable
-kind node and local registry. Review the script's exact bounded resource names
-and cleanup report before using it on a shared Docker host.
+kind node, local registry, and two manager Pods. The v0.5 candidate gate deletes
+the current Lease holder through a UID-preconditioned request while synthetic
+start and resume Jobs are separately paused. It cordons the single node,
+requires the exact pre-existing passive Pod to acquire the next Lease
+transition without changing the single Job/Pod identities, restores node
+scheduling, and writes two privacy-gated files only for a trusted successful
+upload context. Review the script's exact bounded resource names and cleanup
+report before using it on a shared Docker host.
 
 Tests that create symlinks can be skipped when the operating system or account
 does not permit symlink creation. Report skips separately from passes; never

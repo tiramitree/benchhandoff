@@ -1,7 +1,7 @@
 ## Scope
 
 Describe the smallest behavior or documentation change and why it belongs in
-BenchHandoff's narrow v0.1 boundary.
+BenchHandoff's current narrow evidence-engine or optional `AgentRun` boundary.
 
 ## Validation
 
@@ -42,7 +42,13 @@ AI assistance and source disclosure:
 - [ ] Fail-closed behavior was not weakened merely to pass a platform check.
 - [ ] The change does not assert release, adoption, support, or compatibility
       without immutable public evidence.
+- [ ] Controller coordination changes preserve deterministic Job identity,
+      fail closed on ambiguous Job/Pod sets, and distinguish Lease coordination
+      from strict fencing or exactly-once execution.
+- [ ] Leader-election changes retain the precreated exact-Lease boundary,
+      `resourceNames`-restricted `get`/`update`, and no official artifact upload
+      from pull-request execution.
 
-The project has no selected open-source license yet. Do not merge or accept an
-outside contribution until the owner explicitly selects a license and the
-repository metadata is updated.
+The project is distributed under Apache-2.0. Do not merge copied, generated, or
+adapted work unless its provenance is documented and its terms are compatible
+with that license.

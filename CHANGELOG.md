@@ -3,7 +3,67 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
+## 0.5.0 - Unreleased
+
+This section describes an unreleased source candidate. No v0.5 tag, GitHub
+Release, real-kind result, public-CI result, independent review, external use,
+or adoption is asserted.
+
+### Added
+
+- A fixed two-replica reference manager deployment coordinated by the
+  namespaced Lease
+  `benchhandoff-system/agentrun-controller.benchhandoff.dev`.
+- Fixed client-go leader-election settings: 15-second Lease duration,
+  10-second renew deadline, 2-second retry period, Lease resource lock, and
+  `LeaderElectionReleaseOnCancel=false`.
+- A precreated exact Lease plus a namespaced, `resourceNames`-restricted Role
+  that grants only `get` and `update`. It grants no create, list, watch, patch,
+  delete, other-Lease update, or cross-namespace Lease access.
+- Uncached post-create observation that requires one deterministic action Job,
+  one matching server UID, the complete audited template, and a non-ambiguous
+  Pod set after either create success or `AlreadyExists`.
+- Status-conflict handling that discards the stale candidate and requeues a
+  complete fresh reconcile instead of retrying a stale status update.
+- Two registered clean-commit, single-node kind takeover gates. Each cordons
+  the node while a synthetic `start` or `resume` Job is live, binds one stable
+  Lease version to both manager Pod UIDs, and UID-precondition deletes the
+  holder. Only the pre-existing passive Pod may acquire exactly the next
+  transition; the gate then uncordons the node and requires unchanged measured
+  Job/Pod identities and one-object cardinalities.
+- A bounded, privacy-gated `takeover-evidence.json` plus one-entry
+  `SHA256SUMS`. The directory must contain exactly those regular files, and
+  official upload is restricted to a successful trusted push or manual
+  dispatch rather than a pull-request execution.
+
+### Current validation boundary
+
+- Local public-privacy verification: PASS.
+- Local Python suite: 229 passed, 4 Windows capability skips, 0 failures, and
+  0 errors.
+- Local Go formatting, module-tidiness verification, module verification,
+  `go vet`, and unit tests: PASS. The local trimpath manager build passed with
+  `-buildvcs=false` because the worktree is nested inside a separate local
+  repository boundary.
+- The Go race test is unavailable in the current local Windows environment.
+- The real kind takeover gate and public CI have not yet run for this
+  candidate. No v0.5 evidence artifact or release is claimed.
+
+The candidate is a fixed active/passive takeover experiment with one kind node
+and continuously available API-server storage. It does not establish strict
+fencing, network-partition safety, arbitrary Pod recovery, multi-node or
+multi-cluster availability, exactly-once execution, production high
+availability, external adoption, independent review, or recruiting interest.
+
 ## 0.4.0 - 2026-07-29
+
+The final v0.4 release commit is
+`pre-rewrite-commit-retired`. Its recorded public real-kind run
+is
+[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+its recorded tag CI is
+[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+and its GitHub Release record is `pre-rewrite-release-retired`.
 
 AgentRun code-bearing commit
 `pre-rewrite-commit-retired` completed the public pinned

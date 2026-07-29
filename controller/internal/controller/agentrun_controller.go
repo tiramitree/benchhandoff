@@ -58,7 +58,7 @@ func (r *AgentRunReconciler) Reconcile(
 	request ctrl.Request,
 ) (ctrl.Result, error) {
 	var run agentrunv1alpha1.AgentRun
-	if err := r.Get(ctx, request.NamespacedName, &run); err != nil {
+	if err := r.liveReader().Get(ctx, request.NamespacedName, &run); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	ctx = context.WithValue(
@@ -276,35 +276,44 @@ func (r *AgentRunReconciler) ensureJob(
 		return r.block(ctx, run, "AmbiguousJobSet")
 	}
 
-	var job *batchv1.Job
-	if len(jobs.Items) == 1 {
-		job = &jobs.Items[0]
-	} else {
+	if len(jobs.Items) == 0 {
 		if err := r.Create(ctx, expected); err != nil {
 			if !apierrors.IsAlreadyExists(err) {
 				return ctrl.Result{}, err
 			}
-			var existing batchv1.Job
-			if getErr := r.liveReader().Get(
-				ctx,
-				types.NamespacedName{
-					Namespace: run.Namespace,
-					Name:      expected.Name,
-				},
-				&existing,
-			); getErr != nil {
-				return ctrl.Result{}, getErr
-			}
-			job = &existing
-		} else {
-			job = expected
 		}
+	}
+
+	// A create acknowledgement does not close the create-versus-status window.
+	// Observe the deterministic name through the uncached reader, then repeat
+	// the label-set cardinality audit before binding the API-server UID.
+	job, observeErr := r.observeExpectedJob(ctx, run, action, specSHA, expected.Name)
+	if observeErr != nil {
+		if errors.Is(observeErr, errAmbiguousJobSet) {
+			return r.block(ctx, run, "AmbiguousJobSet")
+		}
+		if errors.Is(observeErr, errInvalidBoundJob) {
+			return r.block(ctx, run, "JobBindingMismatch")
+		}
+		return ctrl.Result{}, observeErr
 	}
 	if !agentRunUIDPattern.MatchString(string(job.UID)) {
 		return r.block(ctx, run, "JobBindingMismatch")
 	}
 	if err := ValidateJob(job, run, string(action), specSHA); err != nil {
 		return r.block(ctx, run, "JobBindingMismatch")
+	}
+	if run.Status.ActiveJobRef != nil &&
+		run.Status.ActiveJobRef.Action == string(action) &&
+		(run.Status.ActiveJobRef.Name != job.Name ||
+			run.Status.ActiveJobRef.UID != string(job.UID)) {
+		return r.block(ctx, run, "JobBindingMismatch")
+	}
+	if err := r.auditBoundPodSet(ctx, run, job, action); err != nil {
+		if errors.Is(err, errAmbiguousPodSet) {
+			return r.block(ctx, run, "AmbiguousPodSet")
+		}
+		return ctrl.Result{}, err
 	}
 
 	run.Status.ActiveJobRef = &agentrunv1alpha1.JobRef{
@@ -318,6 +327,58 @@ func (r *AgentRunReconciler) ensureJob(
 		setPhase(run, agentrunv1alpha1.PhaseRunning, "RunnerScheduled")
 	}
 	return r.persistStatus(ctx, run)
+}
+
+// observeExpectedJob closes the ambiguous create window through direct API
+// reads. The action label set must contain exactly the deterministic Job, and
+// the named GET and set listing must agree on one server-assigned UID.
+func (r *AgentRunReconciler) observeExpectedJob(
+	ctx context.Context,
+	run *agentrunv1alpha1.AgentRun,
+	action JobAction,
+	specSHA string,
+	expectedName string,
+) (*batchv1.Job, error) {
+	var jobs batchv1.JobList
+	if err := r.liveReader().List(
+		ctx,
+		&jobs,
+		client.InNamespace(run.Namespace),
+		client.MatchingLabels{
+			LabelRunUID: string(run.UID),
+			LabelAction: string(action),
+		},
+	); err != nil {
+		return nil, err
+	}
+	if len(jobs.Items) > 1 {
+		return nil, errAmbiguousJobSet
+	}
+	if len(jobs.Items) != 1 || jobs.Items[0].Name != expectedName {
+		return nil, errInvalidBoundJob
+	}
+
+	var live batchv1.Job
+	if err := r.liveReader().Get(
+		ctx,
+		types.NamespacedName{
+			Namespace: run.Namespace,
+			Name:      expectedName,
+		},
+		&live,
+	); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, errInvalidBoundJob
+		}
+		return nil, err
+	}
+	if live.UID == "" || live.UID != jobs.Items[0].UID {
+		return nil, errInvalidBoundJob
+	}
+	if err := ValidateJob(&live, run, string(action), specSHA); err != nil {
+		return nil, errInvalidBoundJob
+	}
+	return &live, nil
 }
 
 func (r *AgentRunReconciler) loadBoundJob(
@@ -505,6 +566,12 @@ func (r *AgentRunReconciler) persistStatus(
 		return ctrl.Result{}, nil
 	}
 	if err := r.Status().Update(ctx, run); err != nil {
+		if apierrors.IsConflict(err) {
+			// The in-memory candidate is stale. A delayed workqueue entry makes
+			// the next pass begin with a fresh AgentRun and fresh live Job set;
+			// the old object is never retried or blindly patched.
+			return ctrl.Result{RequeueAfter: reconcilePollInterval}, nil
+		}
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil

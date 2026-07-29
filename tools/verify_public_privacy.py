@@ -146,6 +146,24 @@ def inspect_archive(
                     )
 
 
+def inspect_evidence_directory(
+    root: Path,
+    findings: list[tuple[str, tuple[str, ...]]],
+) -> None:
+    if not root.is_dir() or root.is_symlink():
+        raise RuntimeError("evidence directory must be one ordinary directory")
+    for path in sorted(root.iterdir(), key=lambda item: item.name):
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError("evidence directory contains a non-file entry")
+        size = path.stat().st_size
+        if size < 1 or size > MAX_TEXT_BYTES:
+            raise RuntimeError("evidence file size is outside the text boundary")
+        data = path.read_bytes()
+        if b"\0" in data:
+            raise RuntimeError("evidence file is not bounded text")
+        inspect_bytes(f"evidence!{path.name}", data, findings)
+
+
 def verify_project_author(root: Path) -> None:
     project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
         "project"
@@ -186,6 +204,7 @@ def verify_head_identity(root: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dist", type=Path)
+    parser.add_argument("--evidence-dir", type=Path)
     parser.add_argument("--skip-head", action="store_true")
     args = parser.parse_args()
 
@@ -205,6 +224,8 @@ def main() -> int:
                 path.suffix == ".whl" or path.name.endswith(".tar.gz")
             ):
                 inspect_archive(path, findings)
+    if args.evidence_dir:
+        inspect_evidence_directory(args.evidence_dir, findings)
 
     if findings:
         for relative, categories in findings:

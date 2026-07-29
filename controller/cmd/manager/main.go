@@ -3,10 +3,12 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -14,6 +16,30 @@ import (
 	controlv1alpha1 "github.com/tiramitree/benchhandoff/controller/api/v1alpha1"
 	agentruncontroller "github.com/tiramitree/benchhandoff/controller/internal/controller"
 )
+
+const (
+	leaderElectionID        = "agentrun-controller.benchhandoff.dev"
+	leaderElectionNamespace = "benchhandoff-system"
+)
+
+func managerOptions(scheme *runtime.Scheme) ctrl.Options {
+	leaseDuration := 15 * time.Second
+	renewDeadline := 10 * time.Second
+	retryPeriod := 2 * time.Second
+	return ctrl.Options{
+		Scheme:                        scheme,
+		Metrics:                       metricsserver.Options{BindAddress: "0"},
+		HealthProbeBindAddress:        "0",
+		LeaderElection:                true,
+		LeaderElectionResourceLock:    resourcelock.LeasesResourceLock,
+		LeaderElectionNamespace:       leaderElectionNamespace,
+		LeaderElectionID:              leaderElectionID,
+		LeaderElectionReleaseOnCancel: false,
+		LeaseDuration:                 &leaseDuration,
+		RenewDeadline:                 &renewDeadline,
+		RetryPeriod:                   &retryPeriod,
+	}
+}
 
 func main() {
 	var developmentLogs bool
@@ -42,12 +68,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	manager, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsserver.Options{BindAddress: "0"},
-		HealthProbeBindAddress: "0",
-		LeaderElection:         false,
-	})
+	manager, err := ctrl.NewManager(
+		ctrl.GetConfigOrDie(),
+		managerOptions(scheme),
+	)
 	if err != nil {
 		log.Error(err, "unable to create manager")
 		os.Exit(1)

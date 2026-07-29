@@ -1,7 +1,11 @@
-# BenchHandoff v0.4.0
+# BenchHandoff v0.5.0 candidate
 
 [![CI](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
 [![AgentRun real kind E2E](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml)
+
+> **Unreleased:** this source tree is a v0.5.0 candidate. The badges report the
+> latest public `main` results and do not validate this candidate. The current
+> completed release remains v0.4.0.
 
 BenchHandoff is a narrow evidence engine for resuming a flat, sequential batch
 of expensive commands. The Python CLI runs locally. Version 0.4 also includes
@@ -41,6 +45,53 @@ forks, and maintainer-authored examples are not external-adoption evidence.
 BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
 scheduler, sandbox, cryptographic attestation service, or guarantee of full
 reproducibility.
+
+## What the unreleased v0.5 candidate adds
+
+The candidate changes the reference manager deployment from one replica to a
+fixed pair. Both managers use client-go leader election over the namespaced
+`coordination.k8s.io/v1` Lease
+`benchhandoff-system/agentrun-controller.benchhandoff.dev`. The fixed timing is
+a 15-second Lease duration, 10-second renew deadline, and 2-second retry
+period. `LeaderElectionReleaseOnCancel` is `false`, so an intentional shutdown
+does not voluntarily shorten the observation window by releasing the Lease.
+The exact Lease is precreated. Its namespaced Role is restricted by
+`resourceNames` and allows only `get` and `update` on that one object. It does
+not allow Lease create, list, watch, patch, delete, access to another Lease in
+the namespace, or cross-namespace Lease reads.
+
+The candidate also narrows two controller ambiguity windows:
+
+- after a Job create attempt, including `AlreadyExists`, the reconciler uses
+  uncached API reads to require one deterministic action Job, one matching
+  server-assigned UID, the complete registered Job template, and a non-ambiguous
+  Pod set before binding status; an unknown create error is retried through a
+  fresh reconcile and never causes a second Job name; and
+- a status-update conflict discards the stale status candidate and schedules a
+  fresh reconcile. A later pass adopts only the same validated Job UID; a
+  different bound UID blocks the run.
+
+The registered candidate gate requires a clean exact source commit and one
+disposable single-node kind cluster with two running Ready manager Pods. For
+each paused synthetic `start` and `resume` runner, it binds one stable Lease
+resource version to both manager names and UIDs, cordons the node, and deletes
+the exact holder through a UID-preconditioned API request. Only the previously
+observed non-holder Pod, with its original UID, may acquire exactly the next
+Lease transition. The gate then uncordons the node and restores two Ready
+replicas. Across each takeover, the measured before/after Job and Pod names,
+UIDs, and cardinalities must remain one exact object each.
+
+The gate writes one bounded `takeover-evidence.json` containing those measured
+fields, binds it with one `SHA256SUMS` entry, rejects any extra or non-regular
+entry, and applies the repository privacy scanner to both files. The workflow
+uploads those exact two files only for a trusted repository push or manual
+dispatch after success; pull-request executions do not publish an official
+artifact.
+
+This is a fixed active/passive takeover experiment with the API server and its
+storage continuously available. It is not strict fencing, network-partition
+safety, arbitrary Pod recovery, multi-node or multi-cluster availability,
+exactly-once execution, or production high availability.
 
 ## What v0.4 adds
 
@@ -196,6 +247,25 @@ source needs no install.
 
 ## Validation status
 
+### Unreleased v0.5 candidate
+
+The current local Windows candidate checkpoint reported:
+
+- public-privacy verification: PASS;
+- Python tests: 229 passed, 4 Windows capability skips, 0 failures, and
+  0 errors; and
+- Go formatting, module-tidiness verification, module verification, `go vet`,
+  and unit tests: PASS. A local trimpath manager build also passed with
+  `-buildvcs=false`, which was required only because this checkout is nested
+  inside a separate local repository boundary.
+
+The Go race test is unavailable in the current local Windows environment. The
+real kind takeover gate and public CI have **not** been run for v0.5.0. These
+mutable local results are neither a release record nor public evidence, and no
+candidate takeover artifact is claimed.
+
+### Released v0.4 history
+
 The AgentRun code-bearing commit
 `pre-rewrite-commit-retired` completed the public pinned
 single-node
@@ -307,10 +377,14 @@ CI results, not independent reproduction, production reliability, or adoption.
 ## GitHub release
 
 [v0.4.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.4.0) is the
-version documented by this source. Treat it as a completed GitHub-only
-early-alpha release only when that link resolves to an annotated tag, a final
-Release, and the exact CI-built wheel, sdist, and `SHA256SUMS`. Before those
-surfaces exist, version 0.4.0 is only a source candidate.
+current completed GitHub-only early-alpha release. Its release commit is
+`pre-rewrite-commit-retired`; its recorded public real-kind run
+is
+[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+its recorded tag CI is
+[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
+and its GitHub Release record is `pre-rewrite-release-retired`. Those immutable v0.4 facts do not
+validate the unreleased v0.5 candidate.
 
 The version 0.4 release scope does not include a controller image. The Go
 manager, CRD, reference Kustomize manifests, and kind gate are source-only.

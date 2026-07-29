@@ -1,0 +1,8 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: agentrun-controller.benchhandoff.dev
+  namespace: benchhandoff-system
+  labels:
+    app.kubernetes.io/name: agentrun-controller
+    app.kubernetes.io/part-of: benchhandoff

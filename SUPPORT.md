@@ -4,6 +4,10 @@ BenchHandoff has GitHub-only early releases and no package-registry release,
 support SLA, guaranteed response time, Kubernetes compatibility promise, or
 production-support commitment.
 
+Version 0.5.0 is currently an unreleased source candidate. Its two-manager
+Lease and takeover code does not create a supported HA product or compatibility
+commitment.
+
 Use the repository's structured issue forms for reproducible bugs, independent
 reproduction reports, and proposed external-use or review evidence. Use the
 security process in [SECURITY.md](SECURITY.md) for vulnerabilities. General
@@ -19,9 +23,13 @@ Before filing an issue:
    sensitive output.
 
 For an `AgentRun` report, also identify the exact controller commit and
-Kubernetes versions, and reduce the case to synthetic manifests. Do not publish
-a real PVC name, suite path, namespace, cluster endpoint, Pod log, termination
-message from a private workload, or raw custom resource.
+Kubernetes versions, and reduce the case to synthetic manifests. For candidate
+leader-election behavior, report only synthetic Lease timing and whether the
+registered exact pre-existing-passive, next-transition, and runner-identity
+assertions passed. Outside the registered disposable synthetic gate, do not
+publish actual Lease resource versions, manager identities, Pod UIDs, a real
+PVC name, suite path, namespace, cluster endpoint, Pod log, termination message
+from a private workload, or raw custom resource.
 
 Never upload a raw run directory, command log, absolute path, local username,
 token, credential, private dataset, environment dump, or confidential command

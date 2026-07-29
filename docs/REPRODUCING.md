@@ -49,6 +49,66 @@ termination and residual-group refusal after a hard runner exit. A green result
 supports only those synthetic operating-system boundaries; it is not a sandbox,
 production reliability rate, or external reproduction.
 
+## Validate the unreleased v0.5 controller candidate
+
+The current local Windows checkpoint reports public-privacy PASS, 229 Python
+passes with 4 Windows capability skips and no failures or errors, plus PASS for
+Go formatting, module-tidiness verification, module verification, `go vet`,
+and unit tests. A trimpath manager build passed locally with
+`-buildvcs=false`; this exception was needed because the worktree is nested
+inside a separate local repository boundary. A clean standalone checkout
+should use the ordinary build command below. The local Windows environment
+cannot run the Go race test. The v0.5 real-kind gate and public CI have not yet
+run, so no candidate takeover artifact or public validation is claimed.
+
+Run the Go source checks from a supported environment:
+
+```bash
+gofmt -l controller
+cd controller
+go mod tidy -diff
+go mod verify
+go vet -mod=readonly ./...
+go test -mod=readonly ./...
+go test -mod=readonly -race ./...
+go build -mod=readonly ./cmd/manager
+cd ..
+```
+
+The registered real-API gate is:
+
+```bash
+bash controller/test/e2e/run_kind.sh
+```
+
+It requires Linux, Bash, Docker, outbound access to pinned public images and
+downloads, and enough resources for one disposable kind node, one registry,
+and two manager Pods. The candidate gate deletes the observed Lease-holder
+manager while synthetic `start` and `resume` Jobs are separately paused. It
+requires a clean source tree at the beginning and end, binds a stable Lease
+version to both manager Pod UIDs, cordons the node, and uses a Pod-UID
+precondition for deletion. Only the previously observed non-holder Pod may
+acquire exactly the next transition. The gate then uncordons the node, restores
+two Ready replicas, and requires equal measured before/after Job and Pod
+identities with one-object cardinalities.
+
+On success, the script writes `takeover-evidence.json` and `SHA256SUMS` only
+below a new bounded temporary evidence directory. It refuses an existing path,
+requires exactly two regular files, checks their digest relationship, and
+applies the repository privacy scanner to both. CI supplies a new
+`E2E_EVIDENCE_DIR` outside the scratch root; it uploads the exact two files
+only after a successful trusted push or manual dispatch. Pull-request runs do
+not publish an official artifact.
+
+When `E2E_EVIDENCE_DIR` is omitted locally, the default is
+`$SCRATCH_ROOT/evidence`, which successful scratch cleanup deletes. To retain a
+local record, provide a new, non-existing path under `RUNNER_TEMP`; never point
+it at a durable or pre-existing directory. Do not publish the scratch tree, raw
+objects, Pod logs, private manifests, or PVC contents. This fixed gate assumes
+the API server and its storage remain available and does not prove strict
+fencing, network-partition safety, arbitrary Pod recovery, multi-node or
+multi-cluster availability, exactly-once effects, or production HA.
+
 ## Validate a version 3 workspace
 
 Use a fresh copy of the synthetic version 3 suite. Keep the run directory

@@ -2,14 +2,17 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	agentrunv1alpha1 "github.com/tiramitree/benchhandoff/controller/api/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -50,7 +53,8 @@ func controllerTestClient(
 
 type jobUIDAssigningClient struct {
 	client.Client
-	uid types.UID
+	uid        types.UID
+	jobCreates int
 }
 
 func (c *jobUIDAssigningClient) Create(
@@ -59,9 +63,141 @@ func (c *jobUIDAssigningClient) Create(
 	options ...client.CreateOption,
 ) error {
 	if job, ok := object.(*batchv1.Job); ok && job.UID == "" {
+		c.jobCreates++
 		job.UID = c.uid
 	}
 	return c.Client.Create(ctx, object, options...)
+}
+
+type alreadyExistsJobClient struct {
+	client.Client
+	uid        types.UID
+	jobCreates int
+}
+
+func (c *alreadyExistsJobClient) Create(
+	ctx context.Context,
+	object client.Object,
+	options ...client.CreateOption,
+) error {
+	job, ok := object.(*batchv1.Job)
+	if !ok {
+		return c.Client.Create(ctx, object, options...)
+	}
+	c.jobCreates++
+	competing := job.DeepCopy()
+	competing.UID = c.uid
+	if err := c.Client.Create(ctx, competing, options...); err != nil {
+		return err
+	}
+	return apierrors.NewAlreadyExists(
+		schema.GroupResource{Group: batchv1.GroupName, Resource: "jobs"},
+		job.Name,
+	)
+}
+
+type committedCreateErrorClient struct {
+	client.Client
+	uid        types.UID
+	jobCreates int
+}
+
+func (c *committedCreateErrorClient) Create(
+	ctx context.Context,
+	object client.Object,
+	options ...client.CreateOption,
+) error {
+	job, ok := object.(*batchv1.Job)
+	if !ok {
+		return c.Client.Create(ctx, object, options...)
+	}
+	c.jobCreates++
+	committed := job.DeepCopy()
+	committed.UID = c.uid
+	if err := c.Client.Create(ctx, committed, options...); err != nil {
+		return err
+	}
+	return errors.New("synthetic committed create response loss")
+}
+
+type duplicateOnCreateClient struct {
+	client.Client
+	firstUID   types.UID
+	secondUID  types.UID
+	jobCreates int
+}
+
+func (c *duplicateOnCreateClient) Create(
+	ctx context.Context,
+	object client.Object,
+	options ...client.CreateOption,
+) error {
+	job, ok := object.(*batchv1.Job)
+	if !ok {
+		return c.Client.Create(ctx, object, options...)
+	}
+	c.jobCreates++
+	first := job.DeepCopy()
+	first.UID = c.firstUID
+	if err := c.Client.Create(ctx, first, options...); err != nil {
+		return err
+	}
+	second := job.DeepCopy()
+	second.Name += "-duplicate"
+	second.UID = c.secondUID
+	return c.Client.Create(ctx, second, options...)
+}
+
+type statusConflictClient struct {
+	client.Client
+	conflicts    int
+	winnerJobUID string
+}
+
+func (c *statusConflictClient) Status() client.SubResourceWriter {
+	return &statusConflictWriter{
+		SubResourceWriter: c.Client.Status(),
+		owner:             c,
+	}
+}
+
+type statusConflictWriter struct {
+	client.SubResourceWriter
+	owner *statusConflictClient
+}
+
+func (w *statusConflictWriter) Update(
+	ctx context.Context,
+	object client.Object,
+	options ...client.SubResourceUpdateOption,
+) error {
+	if w.owner.conflicts == 0 {
+		w.owner.conflicts++
+		// Persist the same JobRef as if a competing reconciler won the status
+		// write, then report the conflict observed by this stale candidate.
+		winner := object
+		if w.owner.winnerJobUID != "" {
+			run, ok := object.(*agentrunv1alpha1.AgentRun)
+			if !ok || run.Status.ActiveJobRef == nil {
+				return errors.New("status conflict winner requires an active JobRef")
+			}
+			winnerRun := run.DeepCopy()
+			winnerRun.Status.ActiveJobRef.UID = w.owner.winnerJobUID
+			winner = winnerRun
+		}
+		if err := w.SubResourceWriter.Update(ctx, winner, options...); err != nil {
+			return err
+		}
+		return apierrors.NewConflict(
+			schema.GroupResource{
+				Group:    agentrunv1alpha1.GroupVersion.Group,
+				Resource: "agentruns",
+			},
+			object.GetName(),
+			apierrors.NewResourceExpired("competing status writer"),
+		)
+	}
+	return w.SubResourceWriter.Update(ctx, object, options...)
 }
 
 func controllerTestRequest(run *agentrunv1alpha1.AgentRun) ctrl.Request {
@@ -404,7 +540,7 @@ func TestReconcileUsesFreshAPIReaderWhenCachedClientMissesJob(t *testing.T) {
 	job.UID = types.UID(testJobUID)
 
 	cached := controllerTestClient(t, scheme, run)
-	live := controllerTestClient(t, scheme, job)
+	live := controllerTestClient(t, scheme, run.DeepCopy(), job)
 	reconciler := &AgentRunReconciler{
 		Client:    cached,
 		Scheme:    scheme,
@@ -430,5 +566,271 @@ func TestReconcileUsesFreshAPIReaderWhenCachedClientMissesJob(t *testing.T) {
 	}
 	if jobs := listControllerTestJobs(t, live, run, ActionStart); len(jobs) != 1 {
 		t.Fatalf("live APIReader Job count = %d, want 1", len(jobs))
+	}
+}
+
+func TestReconcileAlreadyExistsAdoptsOneServerUID(t *testing.T) {
+	scheme := controllerTestScheme(t)
+	run := validAgentRun()
+	run.Generation = 7
+	cached := controllerTestClient(t, scheme, run)
+	writer := &alreadyExistsJobClient{
+		Client: cached,
+		uid:    types.UID(testCreatedJobUID),
+	}
+	reconciler := &AgentRunReconciler{
+		Client:    writer,
+		Scheme:    scheme,
+		APIReader: cached,
+	}
+
+	reconcileOnce(t, reconciler, run)
+
+	current := getControllerTestRun(t, cached, run)
+	assertControllerPhaseReason(
+		t,
+		current,
+		agentrunv1alpha1.PhaseRunning,
+		"RunnerScheduled",
+	)
+	if writer.jobCreates != 1 {
+		t.Fatalf("Job create attempts = %d, want 1", writer.jobCreates)
+	}
+	jobs := listControllerTestJobs(t, cached, run, ActionStart)
+	if len(jobs) != 1 {
+		t.Fatalf("start Job count = %d, want 1", len(jobs))
+	}
+	if current.Status.ActiveJobRef == nil ||
+		current.Status.ActiveJobRef.Name != jobs[0].Name ||
+		current.Status.ActiveJobRef.UID != testCreatedJobUID {
+		t.Fatalf(
+			"active Job ref = %#v, want the competing server Job UID",
+			current.Status.ActiveJobRef,
+		)
+	}
+}
+
+func TestReconcileStatusConflictReloadsSameJobWithoutSecondCreate(t *testing.T) {
+	scheme := controllerTestScheme(t)
+	run := validAgentRun()
+	run.Generation = 8
+	cached := controllerTestClient(t, scheme, run)
+	jobWriter := &jobUIDAssigningClient{
+		Client: cached,
+		uid:    types.UID(testCreatedJobUID),
+	}
+	conflictWriter := &statusConflictClient{Client: jobWriter}
+	reconciler := &AgentRunReconciler{
+		Client:    conflictWriter,
+		Scheme:    scheme,
+		APIReader: cached,
+	}
+
+	first, err := reconciler.Reconcile(
+		context.Background(),
+		controllerTestRequest(run),
+	)
+	if err != nil {
+		t.Fatalf("first Reconcile: %v", err)
+	}
+	if first.RequeueAfter != reconcilePollInterval {
+		t.Fatalf(
+			"conflict requeue = %s, want %s",
+			first.RequeueAfter,
+			reconcilePollInterval,
+		)
+	}
+	reconcileOnce(t, reconciler, run)
+
+	current := getControllerTestRun(t, cached, run)
+	assertControllerPhaseReason(
+		t,
+		current,
+		agentrunv1alpha1.PhaseRunning,
+		"RunnerActive",
+	)
+	if conflictWriter.conflicts != 1 {
+		t.Fatalf("status conflicts = %d, want 1", conflictWriter.conflicts)
+	}
+	if jobWriter.jobCreates != 1 {
+		t.Fatalf("Job create attempts = %d, want 1", jobWriter.jobCreates)
+	}
+	jobs := listControllerTestJobs(t, cached, run, ActionStart)
+	if len(jobs) != 1 ||
+		current.Status.ActiveJobRef == nil ||
+		current.Status.ActiveJobRef.UID != string(jobs[0].UID) {
+		t.Fatalf(
+			"fresh reconcile did not preserve one bound Job: jobs=%d ref=%#v",
+			len(jobs),
+			current.Status.ActiveJobRef,
+		)
+	}
+}
+
+func TestReconcileBoundJobUIDMismatchFailsClosedWithoutCreate(t *testing.T) {
+	scheme := controllerTestScheme(t)
+	run := validAgentRun()
+	run.Generation = 9
+	run.Status.Phase = string(agentrunv1alpha1.PhaseRunning)
+	job, _ := bindControllerTestJob(t, run, ActionStart)
+	job.UID = "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"
+	cached := controllerTestClient(t, scheme, run, job)
+	writer := &jobUIDAssigningClient{
+		Client: cached,
+		uid:    types.UID(testCreatedJobUID),
+	}
+	reconciler := &AgentRunReconciler{
+		Client:    writer,
+		Scheme:    scheme,
+		APIReader: cached,
+	}
+
+	reconcileOnce(t, reconciler, run)
+
+	current := getControllerTestRun(t, cached, run)
+	assertControllerPhaseReason(
+		t,
+		current,
+		agentrunv1alpha1.PhaseBlocked,
+		"JobBindingMismatch",
+	)
+	if writer.jobCreates != 0 {
+		t.Fatalf("UID mismatch caused %d Job create attempts", writer.jobCreates)
+	}
+	if jobs := listControllerTestJobs(t, cached, run, ActionStart); len(jobs) != 1 {
+		t.Fatalf("UID mismatch changed the Job set to %d items", len(jobs))
+	}
+}
+
+func TestReconcileCommittedCreateErrorRetriesSameDeterministicJob(t *testing.T) {
+	scheme := controllerTestScheme(t)
+	run := validAgentRun()
+	run.Generation = 10
+	cached := controllerTestClient(t, scheme, run)
+	writer := &committedCreateErrorClient{
+		Client: cached,
+		uid:    types.UID(testCreatedJobUID),
+	}
+	reconciler := &AgentRunReconciler{
+		Client:    writer,
+		Scheme:    scheme,
+		APIReader: cached,
+	}
+
+	if _, err := reconciler.Reconcile(
+		context.Background(),
+		controllerTestRequest(run),
+	); err == nil {
+		t.Fatal("committed create response loss returned no error")
+	}
+	afterError := getControllerTestRun(t, cached, run)
+	if afterError.Status.ActiveJobRef != nil {
+		t.Fatalf(
+			"ambiguous create response wrote a JobRef: %#v",
+			afterError.Status.ActiveJobRef,
+		)
+	}
+
+	reconcileOnce(t, reconciler, run)
+
+	current := getControllerTestRun(t, cached, run)
+	jobs := listControllerTestJobs(t, cached, run, ActionStart)
+	if writer.jobCreates != 1 || len(jobs) != 1 {
+		t.Fatalf(
+			"retry create attempts/Jobs = %d/%d, want 1/1",
+			writer.jobCreates,
+			len(jobs),
+		)
+	}
+	if current.Status.ActiveJobRef == nil ||
+		current.Status.ActiveJobRef.Name != jobs[0].Name ||
+		current.Status.ActiveJobRef.UID != string(jobs[0].UID) {
+		t.Fatalf(
+			"retry did not adopt the committed deterministic Job: %#v",
+			current.Status.ActiveJobRef,
+		)
+	}
+}
+
+func TestReconcilePostCreateDuplicateSetFailsClosed(t *testing.T) {
+	scheme := controllerTestScheme(t)
+	run := validAgentRun()
+	run.Generation = 11
+	cached := controllerTestClient(t, scheme, run)
+	writer := &duplicateOnCreateClient{
+		Client:    cached,
+		firstUID:  types.UID(testCreatedJobUID),
+		secondUID: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb",
+	}
+	reconciler := &AgentRunReconciler{
+		Client:    writer,
+		Scheme:    scheme,
+		APIReader: cached,
+	}
+
+	reconcileOnce(t, reconciler, run)
+
+	current := getControllerTestRun(t, cached, run)
+	assertControllerPhaseReason(
+		t,
+		current,
+		agentrunv1alpha1.PhaseBlocked,
+		"AmbiguousJobSet",
+	)
+	if writer.jobCreates != 1 {
+		t.Fatalf("Job create attempts = %d, want 1", writer.jobCreates)
+	}
+	if jobs := listControllerTestJobs(t, cached, run, ActionStart); len(jobs) != 2 {
+		t.Fatalf("post-create duplicate Job count = %d, want 2", len(jobs))
+	}
+}
+
+func TestReconcileStatusConflictThenDifferentUIDFailsClosed(t *testing.T) {
+	scheme := controllerTestScheme(t)
+	run := validAgentRun()
+	run.Generation = 12
+	cached := controllerTestClient(t, scheme, run)
+	jobWriter := &jobUIDAssigningClient{
+		Client: cached,
+		uid:    types.UID(testCreatedJobUID),
+	}
+	conflictWriter := &statusConflictClient{
+		Client:       jobWriter,
+		winnerJobUID: "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb",
+	}
+	reconciler := &AgentRunReconciler{
+		Client:    conflictWriter,
+		Scheme:    scheme,
+		APIReader: cached,
+	}
+
+	first, err := reconciler.Reconcile(
+		context.Background(),
+		controllerTestRequest(run),
+	)
+	if err != nil || first.RequeueAfter != reconcilePollInterval {
+		t.Fatalf(
+			"first conflict result = %#v, %v; want delayed fresh reconcile",
+			first,
+			err,
+		)
+	}
+	reconcileOnce(t, reconciler, run)
+
+	current := getControllerTestRun(t, cached, run)
+	assertControllerPhaseReason(
+		t,
+		current,
+		agentrunv1alpha1.PhaseBlocked,
+		"JobBindingMismatch",
+	)
+	if jobWriter.jobCreates != 1 {
+		t.Fatalf(
+			"different winner UID caused %d Job create attempts",
+			jobWriter.jobCreates,
+		)
+	}
+	if jobs := listControllerTestJobs(t, cached, run, ActionStart); len(jobs) != 1 {
+		t.Fatalf("different winner UID changed the Job set to %d items", len(jobs))
 	}
 }

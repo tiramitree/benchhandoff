@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -54,6 +55,44 @@ class PublicPrivacyTests(unittest.TestCase):
 
     def test_project_author_is_pseudonymous(self) -> None:
         self.verifier.verify_project_author(REPOSITORY_ROOT)
+
+    def test_evidence_directory_scans_every_regular_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "takeover-evidence.json").write_text(
+                '{"kind":"synthetic"}\n',
+                encoding="utf-8",
+            )
+            (root / "SHA256SUMS").write_bytes(
+                b"service=10.20.30.40\n",
+            )
+            findings: list[tuple[str, tuple[str, ...]]] = []
+            self.verifier.inspect_evidence_directory(root, findings)
+        self.assertEqual(
+            findings,
+            [
+                (
+                    "evidence!SHA256SUMS",
+                    ("private_or_cgnat_network_address",),
+                )
+            ],
+        )
+
+    def test_evidence_directory_rejects_nested_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "nested").mkdir()
+            with self.assertRaisesRegex(RuntimeError, "non-file"):
+                self.verifier.inspect_evidence_directory(root, [])
+
+    def test_evidence_directory_rejects_nul_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "takeover-evidence.json").write_bytes(
+                b'{"kind":"synthetic"}\0service=10.20.30.40\n'
+            )
+            with self.assertRaisesRegex(RuntimeError, "bounded text"):
+                self.verifier.inspect_evidence_directory(root, [])
 
 
 if __name__ == "__main__":

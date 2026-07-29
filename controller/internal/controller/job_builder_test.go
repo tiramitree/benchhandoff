@@ -197,6 +197,43 @@ func TestBuildJobAllActionsBindSuiteDigest(t *testing.T) {
 	}
 }
 
+func TestDeterministicJobNameSeparatesEveryOperationKeyField(t *testing.T) {
+	specSHA := strings.Repeat("a", 64)
+	base := deterministicJobName(testAgentRunUID, ActionStart, specSHA)
+	candidates := map[string]string{
+		"run UID": deterministicJobName(
+			"ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb",
+			ActionStart,
+			specSHA,
+		),
+		"action": deterministicJobName(
+			testAgentRunUID,
+			ActionResume,
+			specSHA,
+		),
+		"execution spec": deterministicJobName(
+			testAgentRunUID,
+			ActionStart,
+			strings.Repeat("b", 64),
+		),
+	}
+	seen := map[string]string{base: "base"}
+	for field, candidate := range candidates {
+		if candidate == base {
+			t.Fatalf("changing %s did not change the deterministic Job name", field)
+		}
+		if previous, duplicate := seen[candidate]; duplicate {
+			t.Fatalf(
+				"changing %s collided with %s at %q",
+				field,
+				previous,
+				candidate,
+			)
+		}
+		seen[candidate] = field
+	}
+}
+
 func TestBuildJobRejectsInvalidBindings(t *testing.T) {
 	run := validAgentRun()
 	specSHA, err := CanonicalExecutionSpecSHA(run.Spec.Execution)

@@ -83,6 +83,63 @@ still defines suite, run, workspace, resume, and bundle semantics. See
 [`AGENTRUN_CONTROLLER.md`](AGENTRUN_CONTROLLER.md) for approval, restart,
 security, and validation boundaries.
 
+The unreleased v0.5 candidate keeps that CRD and lifecycle unchanged, but runs
+the reference manager as a fixed active/passive pair:
+
+```text
+        Lease: benchhandoff-system/agentrun-controller.benchhandoff.dev
+        duration 15s | renew 10s | retry 2s | release-on-cancel false
+                              |
+                     +--------+--------+
+                     |                 |
+                manager A         manager B
+                  leader           standby
+                     |
+                     v
+        fresh AgentRun + live Job/Pod API observations
+                     |
+                     v
+          deterministic start/resume/verify Job
+```
+
+Only the Lease holder starts controller-runtime reconciliation. The separate
+namespaced Lease Role is restricted by `resourceNames` to the precreated exact
+Lease and grants only `get` and `update`. It grants no create, list, watch,
+patch, delete, other-Lease update, or cross-namespace Lease access. The
+reference ClusterRole used for AgentRun, Job, and Pod reconciliation remains a
+separate broader scope.
+
+Two windows receive explicit candidate handling:
+
+```text
+Create deterministic Job
+        |
+        +-- success or AlreadyExists
+        |        |
+        |        v
+        |  uncached action-set List + deterministic-name GET
+        |        |
+        |        +-- exactly one full-template/UID match -> bind
+        |        +-- ambiguity or mismatch -> Blocked
+        |
+        +-- unknown error -> return and begin a later fresh reconcile
+
+Status Update
+        |
+        +-- success -> stable binding
+        +-- conflict -> discard stale candidate -> delayed fresh reconcile
+```
+
+The candidate gate starts from a clean commit. For each paused synthetic
+`start` and `resume` Job, it binds one stable Lease resource version to both
+manager Pod UIDs, cordons the node, and UID-precondition deletes the holder.
+Only the pre-existing non-holder may acquire exactly the next transition. The
+gate then uncordons the node, restores two Ready replicas, and requires the
+same measured single Job and Pod identities. This architecture assumes the API
+server and its storage stay available. A Lease is coordination, not strict
+fencing; this does not establish partition safety, multi-node or multi-cluster
+availability, arbitrary Pod recovery, exactly-once effects, or production HA.
+
 ## Durable records
 
 `plan.json` is immutable after creation. `state.json` is replaced atomically per

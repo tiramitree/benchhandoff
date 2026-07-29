@@ -23,9 +23,10 @@ leases. Device-id comparison also does not detect every same-device bind mount.
 
 ## AgentRun security boundary
 
-The optional version 0.4 `AgentRun` controller orchestrates the same version 3
-engine through Kubernetes Jobs. It does not make an untrusted suite, image,
-cluster, or PVC safe. Any principal that may update
+The optional version 0.4 `AgentRun` controller, plus the unreleased v0.5
+two-manager candidate, orchestrates the same version 3 engine through Kubernetes
+Jobs. Neither makes an untrusted suite, image, cluster, or PVC safe. Any
+principal that may update
 `spec.resumeDecisionSHA256` can submit the exact published approval value; the
 digest is a content binding, not a credential, signature, human identity, or
 authorization decision. Use Kubernetes RBAC and admission policy to control
@@ -37,6 +38,15 @@ create and observe Jobs, and observe Pods across all namespaces. It has no
 Secret permissions. A real deployment must review that cluster-wide scope and
 replace or narrow it to the intended namespaces and operations.
 
+The v0.5 candidate separately uses one `coordination.k8s.io/v1` Lease in
+`benchhandoff-system`. The exact Lease is precreated. Its namespaced Role uses
+`resourceNames` and allows only `get` and `update` on that object. It cannot
+create, list, watch, patch, or delete Leases, update another Lease in the same
+namespace, or read one across namespaces. Fixed 15/10/2-second
+duration/renew/retry settings and `LeaderElectionReleaseOnCancel=false`
+coordinate cooperating managers; they are not a fencing token, authorization
+boundary, or proof that a former leader cannot act during a network partition.
+
 The manager needs its Kubernetes service-account token for those API
 operations; generated runner Jobs disable token mounting. Runner settings such
 as non-root
@@ -47,17 +57,19 @@ restrict PVC writes, network access, workload side effects, or a hostile image.
 The controller trusts live Kubernetes object identity and one bounded
 termination message. Those records are not signed or remotely attested. A
 principal with sufficient cluster privileges can alter resources the controller
-trusts. The only observed deployment is one manager in one single-node kind
-cluster; there is no multi-replica, high-availability, production-isolation, or
-general Kubernetes compatibility claim. See
+trusts. Released v0.4 observed one manager in one single-node kind cluster. The
+v0.5 candidate configures two managers, but its real-kind and public-CI gates
+have not yet run. There is no strict-fencing, network-partition,
+production-high-availability, production-isolation, or general Kubernetes
+compatibility claim. See
 [the AgentRun controller boundary](docs/AGENTRUN_CONTROLLER.md).
 
 ## Supported versions
 
 Versions 0.1.0 through 0.4.0 are early GitHub version lines, not supported
-production lines. Security reports may identify an exact tag or full commit.
-There is no response-time, remediation-time, compatibility, or maintenance
-commitment.
+production lines. Version 0.5.0 is currently an unreleased source candidate.
+Security reports may identify an exact tag or full commit. There is no
+response-time, remediation-time, compatibility, or maintenance commitment.
 
 ## Reporting a vulnerability
 
