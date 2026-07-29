@@ -79,13 +79,16 @@ bash controller/test/e2e/run_kind.sh
 It requires Linux, Bash, Docker, outbound access to pinned public images and
 downloads, and enough resources for one disposable kind node, one registry,
 and two manager Pods. The v0.5 gate deletes the observed Lease-holder
-manager while synthetic `start` and `resume` Jobs are separately paused. It
-requires a clean source tree at the beginning and end, binds a stable Lease
-version to both manager Pod UIDs, cordons the node, and uses a Pod-UID
-precondition for deletion. Only the previously observed non-holder Pod may
-acquire exactly the next transition. The gate then uncordons the node, restores
-two Ready replicas, and requires equal measured before/after Job and Pod
-identities with one-object cardinalities.
+manager once while synthetic `start` is paused and live. For `resume`, it
+temporarily removes only business RBAC, preserves Lease permissions, releases
+the runner, and requires a successful terminal result to remain pending in
+`AgentRun` status before deleting the holder. It requires a clean source tree
+at the beginning and end, binds a stable Lease version to both manager Pod
+UIDs, cordons the node, and uses a Pod-UID precondition for deletion. Only the
+previously observed non-holder Pod may acquire exactly the next transition.
+The gate restores the exact business binding, uncordons the node, restores two
+Ready replicas, and requires equal measured before/after Job and Pod identities
+with one-object cardinalities.
 
 On success, the script writes `takeover-evidence.json` and `SHA256SUMS` only
 below a new bounded temporary evidence directory. It refuses an existing path,

@@ -130,15 +130,19 @@ Status Update
         +-- conflict -> discard stale candidate -> delayed fresh reconcile
 ```
 
-The registered v0.5 gate starts from a clean commit. For each paused synthetic
-`start` and `resume` Job, it binds one stable Lease resource version to both
-manager Pod UIDs, cordons the node, and UID-precondition deletes the holder.
-Only the pre-existing non-holder may acquire exactly the next transition. The
-gate then uncordons the node, restores two Ready replicas, and requires the
-same measured single Job and Pod identities. This architecture assumes the API
-server and its storage stay available. A Lease is coordination, not strict
-fencing; this does not establish partition safety, multi-node or multi-cluster
-availability, arbitrary Pod recovery, exactly-once effects, or production HA.
+The registered v0.5 gate starts from a clean commit. It performs one takeover
+while a paused synthetic `start` Job is live. For `resume`, it temporarily
+removes the separate business ClusterRoleBinding, retains Lease permissions,
+and records the successful terminal Job/Pod result while `AgentRun` status
+still binds the resume Job. It then binds one stable Lease resource version to
+both manager Pod UIDs, cordons the node, and UID-precondition deletes the
+holder. Only the pre-existing non-holder may acquire exactly the next
+transition. The gate restores the exact business binding, uncordons the node,
+restores two Ready replicas, and requires the same measured single Job and Pod
+identities. This architecture assumes the API server and its storage stay
+available. A Lease is coordination, not strict fencing; this does not establish
+partition safety, multi-node or multi-cluster availability, arbitrary Pod
+recovery, exactly-once effects, or production HA.
 
 ## Durable records
 

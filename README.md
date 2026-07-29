@@ -72,27 +72,41 @@ Version 0.5 also narrows two controller ambiguity windows:
   fresh reconcile. A later pass adopts only the same validated Job UID; a
   different bound UID blocks the run.
 
+Deterministic fake-client fault-injection unit tests cover create success,
+`AlreadyExists`, committed-response loss, and status conflict. The real-kind
+gate below begins from an already established `activeJobRef`, Job, and Pod; it
+does not claim real-API injection of those faults.
+
 The registered v0.5 gate requires a clean exact source commit and one
-disposable single-node kind cluster with two running Ready manager Pods. For
-each paused synthetic `start` and `resume` runner, it binds one stable Lease
-resource version to both manager names and UIDs, cordons the node, and deletes
-the exact holder through a UID-preconditioned API request. Only the previously
-observed non-holder Pod, with its original UID, may acquire exactly the next
-Lease transition. The gate then uncordons the node and restores two Ready
-replicas. Across each takeover, the measured before/after Job and Pod names,
-UIDs, and cardinalities must remain one exact object each.
+disposable single-node kind cluster with two running Ready manager Pods. It
+first pauses a synthetic `start` runner, binds one stable Lease resource
+version to both manager names and UIDs, cordons the node, and
+UID-precondition deletes the exact holder while that Job is live. For
+`resume`, it temporarily removes only the manager's business
+ClusterRoleBinding while preserving the separate Lease RoleBinding, releases
+the runner, and requires the Job and Pod result to be terminal while the
+`AgentRun` remains `Running`, bound to that same resume Job, without a bundle
+or verify Job. It then binds a fresh Lease snapshot and deletes that holder.
+Only the previously observed non-holder Pod, with its original UID, may
+acquire exactly the next Lease transition. The exact business binding is
+restored before the node is uncordoned and two Ready replicas are restored.
+Across each takeover, the measured before/after Job and Pod names, UIDs, and
+cardinalities must remain one exact object each.
 
 The gate writes one bounded `takeover-evidence.json` containing those measured
-fields, binds it with one `SHA256SUMS` entry, rejects any extra or non-regular
-entry, and applies the repository privacy scanner to both files. The workflow
-uploads those exact two files only for a trusted repository push or manual
-dispatch after success; pull-request executions do not publish an official
-artifact.
+fields, the terminal Job/Pod observation, result digest, pending `AgentRun`
+binding, restored RBAC-shape digest, unchanged final Lease holder/transition,
+passive-manager restart count, and final per-action cardinalities. It binds the
+record with one `SHA256SUMS` entry, rejects any extra or non-regular entry, and
+applies the repository privacy scanner to both files. The workflow uploads
+those exact two files only for a trusted repository push or manual dispatch
+after success; pull-request executions do not publish an official artifact.
 
-This is a fixed active/passive takeover experiment with the API server and its
-storage continuously available. It is not strict fencing, network-partition
-safety, arbitrary Pod recovery, multi-node or multi-cluster availability,
-exactly-once execution, or production high availability.
+This is a fixed active/passive takeover experiment with a
+maintainer-controlled RBAC barrier and with the API server and its storage
+continuously available. It is not strict fencing, network-partition safety,
+arbitrary Pod recovery, multi-node or multi-cluster availability, exactly-once
+execution, or production high availability.
 
 ## What v0.4 adds
 
@@ -131,7 +145,8 @@ multi-cluster coordination, production reliability, independent review, or
 external adoption.
 
 See [AgentRun controller](docs/AGENTRUN_CONTROLLER.md) for the API, bindings,
-reproduction command, observed public run, and explicit non-claims.
+registered validation procedure, reproduction command, and explicit
+non-claims.
 
 ## What v0.3 adds
 
@@ -262,12 +277,12 @@ defines the bounded two-manager takeover fixture. A workflow file or an
 unrelated successful run is not evidence for this source revision.
 
 The registered kind fixture checks a deliberate version 3 failure, exact
-approval, resume, fresh verification, manager takeover, stable live Job/Pod
-identity, and bounded cleanup in one disposable single-node environment.
-These are maintainer-operated synthetic checks. They do not establish
-independent reproduction, production reliability, strict fencing,
-exactly-once behavior, general Kubernetes compatibility, external use, or
-adoption.
+approval, resume, fresh verification, one live-start takeover, one
+terminal-resume/pending-status takeover, stable Job/Pod identity, and bounded
+cleanup in one disposable single-node environment. These are
+maintainer-operated synthetic checks. They do not establish independent
+reproduction, production reliability, strict fencing, exactly-once behavior,
+general Kubernetes compatibility, external use, or adoption.
 
 ## GitHub releases
 

@@ -1,8 +1,9 @@
 # Limitations
 
-BenchHandoff v0.5.0 remains a narrow run-evidence engine, not a security
-sandbox, hostile-writer boundary, or distributed workflow engine. Its version
-lines are GitHub-only early releases, not supported production lines.
+The BenchHandoff v0.5.0 source candidate remains a narrow run-evidence engine,
+not a security sandbox, hostile-writer boundary, or distributed workflow
+engine. Published versions through v0.4.0 are GitHub-only early releases, not
+supported production lines.
 
 ## Implemented execution targets
 
@@ -171,14 +172,16 @@ in scope.
   real-kind takeover gate begins only after `activeJobRef`, its Job, and its Pod
   are established; it tests continuity across holder deletion, not a leader
   exit inside those earlier windows.
-- The registered v0.5 gate starts only from a clean exact commit. While a
-  paused synthetic `start` Job is live, and again for `resume`, it binds one
-  stable Lease version to both manager Pod UIDs, cordons the single node,
-  UID-precondition deletes the holder, and accepts only the pre-existing
-  non-holder Pod acquiring exactly the next transition. It then uncordons the
-  node and requires the measured Job/Pod identities and counts to remain one.
-  A successful exact-revision execution supports only that one
-  maintainer-operated synthetic case, not independent or production evidence.
+- The registered v0.5 gate starts only from a clean exact commit. It performs
+  one takeover while a paused synthetic `start` Job is live. For `resume`, it
+  uses a maintainer-controlled removal of the business ClusterRoleBinding,
+  while preserving the separate Lease RoleBinding, to observe a successful
+  terminal Job and Pod result that is still pending in `AgentRun` status. It
+  then binds a stable Lease version, UID-precondition deletes the holder, and
+  accepts only the pre-existing non-holder Pod acquiring exactly the next
+  transition. The exact business binding is restored, and measured Job/Pod
+  identities and counts must remain one. This synthetic RBAC barrier is not an
+  ordinary workload failure, independent evidence, or production evidence.
 - Even after those fixed gates pass, they do not establish strict fencing,
   availability during network partitions, arbitrary Pod recovery, multi-node
   or multi-cluster availability, exactly-once execution, or production high
@@ -199,10 +202,11 @@ in scope.
   published controller image, Helm chart, upgrade/migration mechanism,
   production configuration, compatibility matrix, or support commitment.
 - The public v0.4 and v0.5 kind tests use synthetic fixtures and one disposable
-  registry. The v0.5 run produced one bounded privacy-gated takeover record and
-  checksum, with exact relationships checked again after download. Neither gate
-  measures throughput, latency, scale, noisy-neighbor behavior,
-  long-duration stability, production recovery, or real model/agent quality.
+  registry. A successful exact-revision v0.5 gate produces one bounded
+  privacy-gated takeover record and checksum for post-download relationship
+  checks. Neither gate measures throughput, latency, scale, noisy-neighbor
+  behavior, long-duration stability, production recovery, or real model/agent
+  quality.
 
 ## Recovery and atomicity
 

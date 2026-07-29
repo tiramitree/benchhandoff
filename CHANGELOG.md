@@ -3,11 +3,11 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
-## 0.5.0 - 2026-07-29
+## 0.5.0 - Unreleased
 
-Version 0.5.0 is a GitHub-only early version line. The controller remains
-source-only; no controller image, package-registry publication, production
-support, independent review, external use, or adoption is asserted.
+Version 0.5.0 is a GitHub-only early release candidate. The controller remains
+source-only; no v0.5.0 Release, controller image, package-registry publication,
+production support, independent review, external use, or adoption is asserted.
 
 ### Added
 
@@ -25,16 +25,21 @@ support, independent review, external use, or adoption is asserted.
   Pod set after either create success or `AlreadyExists`.
 - Status-conflict handling that discards the stale candidate and requeues a
   complete fresh reconcile instead of retrying a stale status update.
-- Two registered clean-commit, single-node kind takeover gates. Each cordons
-  the node while a synthetic `start` or `resume` Job is live, binds one stable
-  Lease version to both manager Pod UIDs, and UID-precondition deletes the
-  holder. Only the pre-existing passive Pod may acquire exactly the next
-  transition; the gate then uncordons the node and requires unchanged measured
-  Job/Pod identities and one-object cardinalities.
+- Two registered clean-commit, single-node kind takeover gates. The first
+  deletes the Lease holder while a synthetic `start` Job is live. The second
+  temporarily removes only business RBAC, lets `resume` become terminal while
+  its result is still pending in `AgentRun` status, then deletes the holder.
+  Each binds the manager Pod UIDs to a stable Lease resource version, admits
+  only the pre-existing passive Pod at the next transition, and requires
+  unchanged measured Job/Pod identities and one-object cardinalities.
 - A bounded, privacy-gated `takeover-evidence.json` plus one-entry
   `SHA256SUMS`. The directory must contain exactly those regular files, and
   official upload is restricted to a successful trusted push or manual
   dispatch rather than a pull-request execution.
+- Takeover evidence schema 2, adding the terminal Job/Pod result, pending
+  `AgentRun` binding, business-RBAC shape digests, post-restore Lease/passive
+  continuity, and final per-action cardinalities. Earlier schema 1 candidate
+  artifacts remain historical and do not satisfy the current v0.5 gate.
 
 ### Fixed
 

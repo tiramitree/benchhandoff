@@ -64,8 +64,13 @@ TAKEOVER_PASSIVE_BEFORE=""
 TAKEOVER_PASSIVE_BEFORE_UID=""
 TAKEOVER_TRANSITIONS_BEFORE=""
 TAKEOVER_TRANSITIONS_AFTER=""
+TAKEOVER_TRANSITIONS_FINAL=""
 TAKEOVER_LEASE_RESOURCE_VERSION_BEFORE=""
 TAKEOVER_LEASE_RESOURCE_VERSION_AFTER=""
+TAKEOVER_LEASE_RESOURCE_VERSION_FINAL=""
+TAKEOVER_HOLDER_FINAL=""
+TAKEOVER_PASSIVE_RESTART_COUNT_BEFORE=""
+TAKEOVER_PASSIVE_RESTART_COUNT_FINAL=""
 TAKEOVER_JOB_AFTER_NAME=""
 TAKEOVER_JOB_AFTER_UID=""
 TAKEOVER_POD_AFTER_NAME=""
@@ -74,6 +79,17 @@ TAKEOVER_JOB_COUNT_BEFORE=""
 TAKEOVER_JOB_COUNT_AFTER=""
 TAKEOVER_POD_COUNT_BEFORE=""
 TAKEOVER_POD_COUNT_AFTER=""
+BUSINESS_RBAC_BINDING_SHA256_BEFORE=""
+BUSINESS_RBAC_BINDING_SHA256_AFTER=""
+BUSINESS_RBAC_REMOVED=""
+TERMINAL_AGENTRUN_RESOURCE_VERSION=""
+TERMINAL_AGENTRUN_PHASE=""
+TERMINAL_JOB_RESOURCE_VERSION=""
+TERMINAL_JOB_COMPLETION_TIME=""
+TERMINAL_POD_FINISHED_AT=""
+TERMINAL_RESULT_SHA256=""
+TERMINAL_VERIFY_JOB_COUNT=""
+TERMINAL_VERIFY_POD_COUNT=""
 readonly HOST_UID="$(id -u)"
 readonly HOST_GID="$(id -g)"
 readonly KIND="$TOOLS_DIR/kind"
@@ -162,6 +178,27 @@ restore_node_schedulability() {
     return 1
   [[ -z "$unschedulable" || "$unschedulable" == "false" ]] || return 1
   NODE_CORDONED=""
+}
+
+restore_business_rbac_binding() {
+  local current_context restored_digest
+  [[ "$BUSINESS_RBAC_REMOVED" == "yes" ]] || return 0
+  [[ "$CLUSTER_CREATED" == "yes" && -x "$KUBECTL" ]] || return 1
+  current_context="$("$KUBECTL" config current-context 2>/dev/null)" ||
+    return 1
+  [[ "$current_context" == "kind-$CLUSTER_NAME" ]] || return 1
+  "$KUBECTL" apply \
+    -f "$REPOSITORY_ROOT/controller/config/rbac/role_binding.yaml" \
+    --request-timeout=15s >/dev/null 2>&1 ||
+    return 1
+  if declare -F business_binding_sha256 >/dev/null 2>&1 &&
+    [[ -n "$BUSINESS_RBAC_BINDING_SHA256_BEFORE" ]]; then
+    restored_digest="$(business_binding_sha256)" || return 1
+    [[ "$restored_digest" == "$BUSINESS_RBAC_BINDING_SHA256_BEFORE" ]] ||
+      return 1
+    BUSINESS_RBAC_BINDING_SHA256_AFTER="$restored_digest"
+  fi
+  BUSINESS_RBAC_REMOVED=""
 }
 
 bounded_diagnostics() {
@@ -379,6 +416,10 @@ cleanup() {
   fi
   if [[ "$exit_code" -ne 0 ]]; then
     bounded_diagnostics
+  fi
+  if ! restore_business_rbac_binding; then
+    echo "Owned business ClusterRoleBinding restoration failed" >&2
+    exit_code=1
   fi
   if [[ "$CONTROLLER_BUILD_DIR_OWNED" == "yes" ]]; then
     if [[ "$CONTROLLER_BUILD_DIR" != "$CONTROLLER_DIR/.build" ]] ||
@@ -615,6 +656,20 @@ assert_two_ready_managers() {
     fail "manager Deployment was not exactly two desired, available, and Ready Pods"
 }
 
+manager_restart_count() {
+  local pod_name="$1"
+  "$KUBECTL" get pod "$pod_name" -n "$SYSTEM_NAMESPACE" -o json |
+    jq -er '
+      [
+        .status.containerStatuses[]?
+        | select(.name == "manager")
+        | .restartCount
+      ]
+      | select(length == 1)
+      | .[0]
+    '
+}
+
 capture_stable_manager_pair() {
   local lease_before lease_after pods_json
   local resource_version_before resource_version_after holder_record passive_record
@@ -742,11 +797,29 @@ wait_for_preexisting_passive_takeover() {
 perform_manager_takeover() {
   local action="$1" run_uid="$2" job_name="$3" job_uid="$4"
   local pod_name="$5" pod_uid="$6"
+  local boundary="${7:-active-job}" release_marker="${8:-}"
   local live_job_uid live_pod_uid live_pod_name
   local passive_name passive_uid
   local delete_lease_json delete_holder delete_transitions delete_resource_version
   local deletion_deadline current_deleted_uid deleted=""
   local job_count_before pod_count_before job_count_after pod_count_after
+  local complete_conditions failed_conditions
+  local passive_restart_before passive_restart_final
+  local final_lease_json final_holder final_transitions final_resource_version
+
+  case "$boundary" in
+    active-job)
+      [[ -z "$release_marker" ]] ||
+        fail "active-Job takeover cannot release its runner inside the boundary"
+      ;;
+    terminal-result-pending-status)
+      [[ "$action" == "resume" && "$release_marker" == "resume.release" ]] ||
+        fail "terminal-result takeover requires the exact resume release marker"
+      ;;
+    *)
+      fail "unknown manager takeover boundary: $boundary"
+      ;;
+  esac
 
   assert_two_ready_managers
   assert_job_ref "$action" "$job_name" "$job_uid"
@@ -772,6 +845,13 @@ perform_manager_takeover() {
     -o jsonpath='{.spec.unschedulable}')" == "true" ]] ||
     fail "kind node was not cordoned before manager deletion"
 
+  if [[ "$boundary" == "terminal-result-pending-status" ]]; then
+    begin_business_rbac_barrier
+    release_runner_gate "$pod_name" "$release_marker"
+    assert_terminal_resume_window \
+      happy "$run_uid" "$job_name" "$job_uid" "$pod_name" "$pod_uid"
+  fi
+
   capture_stable_manager_pair
   TAKEOVER_HOLDER_BEFORE="$LEASE_HOLDER_OBSERVED"
   TAKEOVER_TRANSITIONS_BEFORE="$LEASE_TRANSITIONS_OBSERVED"
@@ -780,8 +860,12 @@ perform_manager_takeover() {
   TAKEOVER_LEASE_RESOURCE_VERSION_BEFORE="$LEASE_RESOURCE_VERSION_OBSERVED"
   passive_name="$PASSIVE_MANAGER_OBSERVED"
   passive_uid="$PASSIVE_MANAGER_UID_OBSERVED"
+  passive_restart_before="$(manager_restart_count "$passive_name")"
+  [[ "$passive_restart_before" == "0" ]] ||
+    fail "pre-existing passive manager had already restarted"
   TAKEOVER_PASSIVE_BEFORE="$passive_name"
   TAKEOVER_PASSIVE_BEFORE_UID="$passive_uid"
+  TAKEOVER_PASSIVE_RESTART_COUNT_BEFORE="$passive_restart_before"
 
   delete_lease_json="$("$KUBECTL" get lease "$LEASE_NAME" \
     -n "$SYSTEM_NAMESPACE" \
@@ -840,6 +924,9 @@ perform_manager_takeover() {
     "$TAKEOVER_MANAGER_AFTER_UID" == "$passive_uid" ]] ||
     fail "takeover was not performed by the pre-existing passive manager"
 
+  if [[ "$boundary" == "terminal-result-pending-status" ]]; then
+    end_business_rbac_barrier
+  fi
   restore_node_schedulability ||
     fail "kind node could not be uncordoned after the registered takeover"
   "$KUBECTL" rollout status deployment/agentrun-controller \
@@ -850,6 +937,23 @@ perform_manager_takeover() {
     -n "$SYSTEM_NAMESPACE" \
     -o jsonpath='{.metadata.uid}')" == "$passive_uid" ]] ||
     fail "pre-existing passive manager was replaced after acquiring the Lease"
+  passive_restart_final="$(manager_restart_count "$passive_name")"
+  [[ "$passive_restart_final" == "$passive_restart_before" ]] ||
+    fail "pre-existing passive manager container restarted across takeover"
+  final_lease_json="$("$KUBECTL" get lease "$LEASE_NAME" \
+    -n "$SYSTEM_NAMESPACE" -o json)"
+  final_holder="$(jq -er '.spec.holderIdentity' <<<"$final_lease_json")"
+  final_transitions="$(jq -er '.spec.leaseTransitions' <<<"$final_lease_json")"
+  final_resource_version="$(jq -er '.metadata.resourceVersion' \
+    <<<"$final_lease_json")"
+  [[ "$final_holder" == "$TAKEOVER_HOLDER_AFTER" &&
+    "$final_transitions" == "$TAKEOVER_TRANSITIONS_AFTER" &&
+    "$final_resource_version" =~ ^[0-9]+$ ]] ||
+    fail "Lease changed holder or transition after the registered takeover"
+  TAKEOVER_HOLDER_FINAL="$final_holder"
+  TAKEOVER_TRANSITIONS_FINAL="$final_transitions"
+  TAKEOVER_LEASE_RESOURCE_VERSION_FINAL="$final_resource_version"
+  TAKEOVER_PASSIVE_RESTART_COUNT_FINAL="$passive_restart_final"
 
   live_job_uid="$("$KUBECTL" get job "$job_name" -n "$TEST_NAMESPACE" \
     -o jsonpath='{.metadata.uid}')"
@@ -871,7 +975,27 @@ perform_manager_takeover() {
   TAKEOVER_JOB_AFTER_UID="$live_job_uid"
   TAKEOVER_POD_AFTER_NAME="$live_pod_name"
   TAKEOVER_POD_AFTER_UID="$live_pod_uid"
-  assert_job_live "$job_name" "$pod_name"
+  if [[ "$boundary" == "active-job" ]]; then
+    assert_job_live "$job_name" "$pod_name"
+  else
+    complete_conditions="$("$KUBECTL" get job "$job_name" \
+      -n "$TEST_NAMESPACE" -o json |
+      jq -r '
+        [.status.conditions[]? |
+          select(.type == "Complete" and .status == "True")]
+        | length
+      ')"
+    failed_conditions="$("$KUBECTL" get job "$job_name" \
+      -n "$TEST_NAMESPACE" -o json |
+      jq -r '
+        [.status.conditions[]? |
+          select(.type == "Failed" and .status == "True")]
+        | length
+      ')"
+    [[ "$complete_conditions" == "1" && "$failed_conditions" == "0" ]] ||
+      fail "resume Job did not remain successfully terminal across takeover"
+    assert_step_message "$pod_name" resume completed
+  fi
 }
 
 release_runner_gate() {
@@ -923,6 +1047,145 @@ assert_lease_rbac() {
     -n "$TEST_NAMESPACE")" || auth_status=$?
   [[ "$auth_status" == "1" && "$answer" == "no" ]] ||
     fail "cross-namespace check was not one explicit authorization denial"
+}
+
+business_binding_sha256() {
+  local binding_json canonical
+  binding_json="$("$KUBECTL" get clusterrolebinding agentrun-controller -o json)"
+  canonical="$(jq -cerS '
+    select(
+      .metadata.name == "agentrun-controller"
+      and .roleRef.apiGroup == "rbac.authorization.k8s.io"
+      and .roleRef.kind == "ClusterRole"
+      and .roleRef.name == "agentrun-controller"
+      and (.subjects | length) == 1
+      and .subjects[0].kind == "ServiceAccount"
+      and .subjects[0].name == "agentrun-controller"
+      and .subjects[0].namespace == "benchhandoff-system"
+    )
+    | {
+        role_ref: .roleRef,
+        subject: .subjects[0]
+      }
+  ' <<<"$binding_json")" ||
+    fail "business ClusterRoleBinding did not match its exact registered shape"
+  printf '%s' "$canonical" | sha256sum | cut -d' ' -f1
+}
+
+business_rbac_request_is_state() {
+  local expected="$1" verb="$2" resource="$3" subresource="${4:-}"
+  local service_account answer auth_status
+  service_account="system:serviceaccount:$SYSTEM_NAMESPACE:agentrun-controller"
+  auth_status=0
+  if [[ -n "$subresource" ]]; then
+    answer="$("$KUBECTL" auth can-i "$verb" "$resource" \
+      --subresource="$subresource" \
+      --as="$service_account" \
+      -n "$TEST_NAMESPACE" 2>/dev/null)" || auth_status=$?
+  else
+    answer="$("$KUBECTL" auth can-i "$verb" "$resource" \
+      --as="$service_account" \
+      -n "$TEST_NAMESPACE" 2>/dev/null)" || auth_status=$?
+  fi
+  case "$expected" in
+    allowed)
+      [[ "$auth_status" == "0" && "$answer" == "yes" ]]
+      ;;
+    denied)
+      [[ "$auth_status" == "1" && "$answer" == "no" ]]
+      ;;
+    *)
+      fail "unknown business RBAC state: $expected"
+      ;;
+  esac
+}
+
+business_rbac_is_state() {
+  local expected="$1" request verb resource
+  for request in \
+    "get agentruns.control.benchhandoff.dev" \
+    "list agentruns.control.benchhandoff.dev" \
+    "watch agentruns.control.benchhandoff.dev" \
+    "create jobs.batch" \
+    "get jobs.batch" \
+    "list jobs.batch" \
+    "watch jobs.batch" \
+    "get pods" \
+    "list pods" \
+    "watch pods"; do
+    read -r verb resource <<<"$request"
+    business_rbac_request_is_state "$expected" "$verb" "$resource" ||
+      return 1
+  done
+  for verb in get patch update; do
+    business_rbac_request_is_state \
+      "$expected" \
+      "$verb" \
+      agentruns.control.benchhandoff.dev \
+      status ||
+      return 1
+  done
+}
+
+wait_for_business_rbac_state() {
+  local expected="$1" deadline
+  deadline=$((SECONDS + 30))
+  while (( SECONDS < deadline )); do
+    if business_rbac_is_state "$expected"; then
+      return 0
+    fi
+    sleep 1
+  done
+  fail "manager business RBAC did not become $expected"
+}
+
+begin_business_rbac_barrier() {
+  local binding_json binding_uid absent=""
+  BUSINESS_RBAC_BINDING_SHA256_BEFORE="$(business_binding_sha256)"
+  [[ "$BUSINESS_RBAC_BINDING_SHA256_BEFORE" =~ ^[0-9a-f]{64}$ ]] ||
+    fail "business ClusterRoleBinding digest was not canonical"
+  binding_json="$("$KUBECTL" get clusterrolebinding agentrun-controller -o json)"
+  binding_uid="$(jq -er '.metadata.uid' <<<"$binding_json")"
+  [[ "$binding_uid" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+    fail "business ClusterRoleBinding UID was not canonical"
+  BUSINESS_RBAC_REMOVED="yes"
+  jq -cn \
+    --arg uid "$binding_uid" \
+    '{
+      apiVersion: "v1",
+      kind: "DeleteOptions",
+      preconditions: {uid: $uid},
+      propagationPolicy: "Background"
+    }' |
+    "$KUBECTL" delete \
+      --raw "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/agentrun-controller" \
+      -f - \
+      --request-timeout=15s >/dev/null
+  for _ in $(seq 1 30); do
+    if [[ -z "$("$KUBECTL" get clusterrolebinding agentrun-controller \
+      --ignore-not-found -o name)" ]]; then
+      absent="yes"
+      break
+    fi
+    sleep 1
+  done
+  [[ "$absent" == "yes" ]] ||
+    fail "business ClusterRoleBinding deletion was not observed"
+  wait_for_business_rbac_state denied
+  assert_lease_rbac
+}
+
+end_business_rbac_barrier() {
+  [[ -z "$("$KUBECTL" get clusterrolebinding agentrun-controller \
+    --ignore-not-found -o name)" ]] ||
+    fail "business ClusterRoleBinding unexpectedly reappeared before restoration"
+  restore_business_rbac_binding ||
+    fail "business ClusterRoleBinding could not be restored safely"
+  [[ "$BUSINESS_RBAC_BINDING_SHA256_AFTER" == \
+    "$BUSINESS_RBAC_BINDING_SHA256_BEFORE" ]] ||
+    fail "restored business ClusterRoleBinding shape changed"
+  wait_for_business_rbac_state allowed
+  assert_lease_rbac
 }
 
 ready_reason() {
@@ -995,7 +1258,104 @@ assert_step_message() {
       and .protocol == "benchhandoff-controller-step/v1"
       and .action == $action
       and .outcome == $outcome
-    ' <<<"$message" >/dev/null
+  ' <<<"$message" >/dev/null
+}
+
+assert_terminal_resume_window() {
+  local run_name="$1" run_uid="$2" job_name="$3" job_uid="$4"
+  local pod_name="$5" pod_uid="$6"
+  local job_json pod_json run_json complete_conditions failed_conditions
+  local observed_pod observed_pod_uid message
+
+  "$KUBECTL" wait --for=condition=complete "job/$job_name" \
+    -n "$TEST_NAMESPACE" \
+    --timeout=45s
+  job_json="$("$KUBECTL" get job "$job_name" -n "$TEST_NAMESPACE" -o json)"
+  [[ "$(jq -er '.metadata.uid' <<<"$job_json")" == "$job_uid" ]] ||
+    fail "terminal resume Job UID changed before takeover"
+  complete_conditions="$(jq -r '
+    [.status.conditions[]? | select(.type == "Complete" and .status == "True")]
+    | length
+  ' <<<"$job_json")"
+  failed_conditions="$(jq -r '
+    [.status.conditions[]? | select(.type == "Failed" and .status == "True")]
+    | length
+  ' <<<"$job_json")"
+  [[ "$complete_conditions" == "1" && "$failed_conditions" == "0" ]] ||
+    fail "resume Job was not one successful terminal result"
+  TERMINAL_JOB_RESOURCE_VERSION="$(jq -er '.metadata.resourceVersion' \
+    <<<"$job_json")"
+  TERMINAL_JOB_COMPLETION_TIME="$(jq -er '.status.completionTime' <<<"$job_json")"
+  [[ "$TERMINAL_JOB_RESOURCE_VERSION" =~ ^[0-9]+$ &&
+    "$TERMINAL_JOB_COMPLETION_TIME" =~ Z$ ]] ||
+    fail "terminal resume Job metadata was not canonical"
+
+  observed_pod="$(single_pod_name "$run_uid" resume)"
+  [[ "$observed_pod" == "$pod_name" ]] ||
+    fail "terminal resume Pod name changed before takeover"
+  pod_json="$("$KUBECTL" get pod "$pod_name" -n "$TEST_NAMESPACE" -o json)"
+  observed_pod_uid="$(jq -er '.metadata.uid' <<<"$pod_json")"
+  [[ "$observed_pod_uid" == "$pod_uid" ]] ||
+    fail "terminal resume Pod UID changed before takeover"
+  [[ "$(jq -er '
+    .status.containerStatuses[]
+    | select(.name == "runner")
+    | .state.terminated.exitCode
+  ' <<<"$pod_json")" == "0" ]] ||
+    fail "terminal resume runner did not exit zero"
+  TERMINAL_POD_FINISHED_AT="$(jq -er '
+    .status.containerStatuses[]
+    | select(.name == "runner")
+    | .state.terminated.finishedAt
+  ' <<<"$pod_json")"
+  [[ "$TERMINAL_POD_FINISHED_AT" =~ Z$ ]] ||
+    fail "terminal resume Pod finish time was not canonical"
+  message="$(jq -er '
+    .status.containerStatuses[]
+    | select(.name == "runner")
+    | .state.terminated.message
+  ' <<<"$pod_json")"
+  TERMINAL_RESULT_SHA256="$(printf '%s' "$message" |
+    sha256sum | cut -d' ' -f1)"
+  [[ "$TERMINAL_RESULT_SHA256" =~ ^[0-9a-f]{64}$ ]] ||
+    fail "terminal resume result digest was not canonical"
+  assert_step_message "$pod_name" resume completed
+
+  run_json="$("$KUBECTL" get agentrun "$run_name" \
+    -n "$TEST_NAMESPACE" -o json)"
+  [[ "$(jq -er '.metadata.uid' <<<"$run_json")" == "$run_uid" ]] ||
+    fail "AgentRun UID changed in the terminal-result window"
+  TERMINAL_AGENTRUN_RESOURCE_VERSION="$(jq -er '.metadata.resourceVersion' \
+    <<<"$run_json")"
+  TERMINAL_AGENTRUN_PHASE="$(jq -er '.status.phase' <<<"$run_json")"
+  [[ "$TERMINAL_AGENTRUN_RESOURCE_VERSION" =~ ^[0-9]+$ &&
+    "$TERMINAL_AGENTRUN_PHASE" == "Running" ]] ||
+    fail "AgentRun did not remain Running while the terminal result was pending"
+  jq -e \
+    --arg job_name "$job_name" \
+    --arg job_uid "$job_uid" \
+    '
+      .status.activeJobRef == {
+        action: "resume",
+        name: $job_name,
+        uid: $job_uid
+      }
+      and (.status.bundleSHA256 // "") == ""
+    ' <<<"$run_json" >/dev/null ||
+    fail "AgentRun did not retain the exact resume binding without a bundle"
+
+  [[ "$(job_count "$run_uid" resume)" == "1" ]] ||
+    fail "terminal-result window did not retain exactly one resume Job"
+  [[ "$(pod_names "$run_uid" resume | sed '/^$/d' |
+    wc -l | tr -d ' ')" == "1" ]] ||
+    fail "terminal-result window did not retain exactly one resume Pod"
+  TERMINAL_VERIFY_JOB_COUNT="$(job_count "$run_uid" verify)"
+  TERMINAL_VERIFY_POD_COUNT="$(pod_names "$run_uid" verify |
+    sed '/^$/d' | wc -l | tr -d ' ')"
+  [[ "$TERMINAL_VERIFY_JOB_COUNT" == "0" &&
+    "$TERMINAL_VERIFY_POD_COUNT" == "0" ]] ||
+    fail "verify was scheduled before terminal-result takeover"
+  assert_two_ready_managers
 }
 
 assert_runner_image_id() {
@@ -1215,9 +1575,10 @@ jq -e \
 [[ "$(job_count "$wrong_suite_uid" resume)" == "0" ]]
 [[ "$(job_count "$wrong_suite_uid" verify)" == "0" ]]
 
-# Happy path: delete the exact Lease holder while start and resume are live,
-# require active/passive takeover without changing either runner identity,
-# then require the distinct verify Job and Pod.
+# Happy path: delete the exact Lease holder once while start is live and once
+# after resume is terminal but its result is still pending in AgentRun status.
+# Require the pre-existing passive manager to retain each runner identity, then
+# require the distinct verify Job and Pod.
 apply_case "$MANIFEST_DIR/happy.yaml"
 wait_for_action happy start 60
 happy_uid="$(run_uid happy)"
@@ -1243,6 +1604,7 @@ perform_manager_takeover \
   "$start_pod_uid"
 start_holder_before="$TAKEOVER_HOLDER_BEFORE"
 start_holder_after="$TAKEOVER_HOLDER_AFTER"
+start_holder_final="$TAKEOVER_HOLDER_FINAL"
 start_manager_before="$TAKEOVER_MANAGER_BEFORE"
 start_manager_after="$TAKEOVER_MANAGER_AFTER"
 start_manager_before_uid="$TAKEOVER_MANAGER_BEFORE_UID"
@@ -1251,8 +1613,12 @@ start_passive_before="$TAKEOVER_PASSIVE_BEFORE"
 start_passive_before_uid="$TAKEOVER_PASSIVE_BEFORE_UID"
 start_transitions_before="$TAKEOVER_TRANSITIONS_BEFORE"
 start_transitions_after="$TAKEOVER_TRANSITIONS_AFTER"
+start_transitions_final="$TAKEOVER_TRANSITIONS_FINAL"
 start_lease_resource_version_before="$TAKEOVER_LEASE_RESOURCE_VERSION_BEFORE"
 start_lease_resource_version_after="$TAKEOVER_LEASE_RESOURCE_VERSION_AFTER"
+start_lease_resource_version_final="$TAKEOVER_LEASE_RESOURCE_VERSION_FINAL"
+start_passive_restart_count_before="$TAKEOVER_PASSIVE_RESTART_COUNT_BEFORE"
+start_passive_restart_count_final="$TAKEOVER_PASSIVE_RESTART_COUNT_FINAL"
 start_job_after="$TAKEOVER_JOB_AFTER_NAME"
 start_job_uid_after="$TAKEOVER_JOB_AFTER_UID"
 start_pod_after="$TAKEOVER_POD_AFTER_NAME"
@@ -1313,9 +1679,12 @@ perform_manager_takeover \
   "$resume_job" \
   "$resume_job_uid" \
   "$happy_resume_pod" \
-  "$resume_pod_uid"
+  "$resume_pod_uid" \
+  terminal-result-pending-status \
+  resume.release
 resume_holder_before="$TAKEOVER_HOLDER_BEFORE"
 resume_holder_after="$TAKEOVER_HOLDER_AFTER"
+resume_holder_final="$TAKEOVER_HOLDER_FINAL"
 resume_manager_before="$TAKEOVER_MANAGER_BEFORE"
 resume_manager_after="$TAKEOVER_MANAGER_AFTER"
 resume_manager_before_uid="$TAKEOVER_MANAGER_BEFORE_UID"
@@ -1324,8 +1693,12 @@ resume_passive_before="$TAKEOVER_PASSIVE_BEFORE"
 resume_passive_before_uid="$TAKEOVER_PASSIVE_BEFORE_UID"
 resume_transitions_before="$TAKEOVER_TRANSITIONS_BEFORE"
 resume_transitions_after="$TAKEOVER_TRANSITIONS_AFTER"
+resume_transitions_final="$TAKEOVER_TRANSITIONS_FINAL"
 resume_lease_resource_version_before="$TAKEOVER_LEASE_RESOURCE_VERSION_BEFORE"
 resume_lease_resource_version_after="$TAKEOVER_LEASE_RESOURCE_VERSION_AFTER"
+resume_lease_resource_version_final="$TAKEOVER_LEASE_RESOURCE_VERSION_FINAL"
+resume_passive_restart_count_before="$TAKEOVER_PASSIVE_RESTART_COUNT_BEFORE"
+resume_passive_restart_count_final="$TAKEOVER_PASSIVE_RESTART_COUNT_FINAL"
 resume_job_after="$TAKEOVER_JOB_AFTER_NAME"
 resume_job_uid_after="$TAKEOVER_JOB_AFTER_UID"
 resume_pod_after="$TAKEOVER_POD_AFTER_NAME"
@@ -1334,7 +1707,16 @@ resume_job_count_before="$TAKEOVER_JOB_COUNT_BEFORE"
 resume_job_count_after="$TAKEOVER_JOB_COUNT_AFTER"
 resume_pod_count_before="$TAKEOVER_POD_COUNT_BEFORE"
 resume_pod_count_after="$TAKEOVER_POD_COUNT_AFTER"
-release_runner_gate "$happy_resume_pod" resume.release
+resume_business_rbac_sha256_before="$BUSINESS_RBAC_BINDING_SHA256_BEFORE"
+resume_business_rbac_sha256_after="$BUSINESS_RBAC_BINDING_SHA256_AFTER"
+resume_terminal_agentrun_resource_version="$TERMINAL_AGENTRUN_RESOURCE_VERSION"
+resume_terminal_agentrun_phase="$TERMINAL_AGENTRUN_PHASE"
+resume_terminal_job_resource_version="$TERMINAL_JOB_RESOURCE_VERSION"
+resume_terminal_job_completion_time="$TERMINAL_JOB_COMPLETION_TIME"
+resume_terminal_pod_finished_at="$TERMINAL_POD_FINISHED_AT"
+resume_terminal_result_sha256="$TERMINAL_RESULT_SHA256"
+resume_terminal_verify_job_count="$TERMINAL_VERIFY_JOB_COUNT"
+resume_terminal_verify_pod_count="$TERMINAL_VERIFY_POD_COUNT"
 wait_for_phase happy Succeeded 180
 binding_watch_complete=""
 for _ in $(seq 1 100); do
@@ -1381,6 +1763,19 @@ for action in start resume verify; do
   [[ "$(job_count "$happy_uid" "$action")" == "1" ]] ||
     fail "happy path did not preserve exactly one $action Job"
 done
+final_start_job_count="$(job_count "$happy_uid" start)"
+final_resume_job_count="$(job_count "$happy_uid" resume)"
+final_verify_job_count="$(job_count "$happy_uid" verify)"
+final_start_pod_count="$(pod_names "$happy_uid" start |
+  sed '/^$/d' | wc -l | tr -d ' ')"
+final_resume_pod_count="$(pod_names "$happy_uid" resume |
+  sed '/^$/d' | wc -l | tr -d ' ')"
+final_verify_pod_count="$(pod_names "$happy_uid" verify |
+  sed '/^$/d' | wc -l | tr -d ' ')"
+[[ "$final_start_pod_count" == "1" &&
+  "$final_resume_pod_count" == "1" &&
+  "$final_verify_pod_count" == "1" ]] ||
+  fail "happy path did not preserve exactly one Pod for every action"
 start_pod="$(single_pod_name "$happy_uid" start)"
 resume_pod="$(single_pod_name "$happy_uid" resume)"
 verify_pod="$(single_pod_name "$happy_uid" verify)"
@@ -1534,6 +1929,7 @@ jq -n -S \
   --arg start_pod_uid_after "$start_pod_uid_after" \
   --arg start_holder_before "$start_holder_before" \
   --arg start_holder_after "$start_holder_after" \
+  --arg start_holder_final "$start_holder_final" \
   --arg start_manager_before "$start_manager_before" \
   --arg start_manager_after "$start_manager_after" \
   --arg start_manager_before_uid "$start_manager_before_uid" \
@@ -1542,8 +1938,12 @@ jq -n -S \
   --arg start_passive_before_uid "$start_passive_before_uid" \
   --arg start_lease_resource_version_before "$start_lease_resource_version_before" \
   --arg start_lease_resource_version_after "$start_lease_resource_version_after" \
+  --arg start_lease_resource_version_final "$start_lease_resource_version_final" \
   --argjson start_transitions_before "$start_transitions_before" \
   --argjson start_transitions_after "$start_transitions_after" \
+  --argjson start_transitions_final "$start_transitions_final" \
+  --argjson start_passive_restart_count_before "$start_passive_restart_count_before" \
+  --argjson start_passive_restart_count_final "$start_passive_restart_count_final" \
   --argjson start_job_count_before "$start_job_count_before" \
   --argjson start_job_count_after "$start_job_count_after" \
   --argjson start_pod_count_before "$start_pod_count_before" \
@@ -1558,6 +1958,7 @@ jq -n -S \
   --arg resume_pod_uid_after "$resume_pod_uid_after" \
   --arg resume_holder_before "$resume_holder_before" \
   --arg resume_holder_after "$resume_holder_after" \
+  --arg resume_holder_final "$resume_holder_final" \
   --arg resume_manager_before "$resume_manager_before" \
   --arg resume_manager_after "$resume_manager_after" \
   --arg resume_manager_before_uid "$resume_manager_before_uid" \
@@ -1566,18 +1967,38 @@ jq -n -S \
   --arg resume_passive_before_uid "$resume_passive_before_uid" \
   --arg resume_lease_resource_version_before "$resume_lease_resource_version_before" \
   --arg resume_lease_resource_version_after "$resume_lease_resource_version_after" \
+  --arg resume_lease_resource_version_final "$resume_lease_resource_version_final" \
   --argjson resume_transitions_before "$resume_transitions_before" \
   --argjson resume_transitions_after "$resume_transitions_after" \
+  --argjson resume_transitions_final "$resume_transitions_final" \
+  --argjson resume_passive_restart_count_before "$resume_passive_restart_count_before" \
+  --argjson resume_passive_restart_count_final "$resume_passive_restart_count_final" \
   --argjson resume_job_count_before "$resume_job_count_before" \
   --argjson resume_job_count_after "$resume_job_count_after" \
   --argjson resume_pod_count_before "$resume_pod_count_before" \
   --argjson resume_pod_count_after "$resume_pod_count_after" \
+  --arg resume_business_rbac_sha256_before "$resume_business_rbac_sha256_before" \
+  --arg resume_business_rbac_sha256_after "$resume_business_rbac_sha256_after" \
+  --arg resume_terminal_agentrun_resource_version "$resume_terminal_agentrun_resource_version" \
+  --arg resume_terminal_agentrun_phase "$resume_terminal_agentrun_phase" \
+  --arg resume_terminal_job_resource_version "$resume_terminal_job_resource_version" \
+  --arg resume_terminal_job_completion_time "$resume_terminal_job_completion_time" \
+  --arg resume_terminal_pod_finished_at "$resume_terminal_pod_finished_at" \
+  --arg resume_terminal_result_sha256 "$resume_terminal_result_sha256" \
+  --argjson resume_terminal_verify_job_count "$resume_terminal_verify_job_count" \
+  --argjson resume_terminal_verify_pod_count "$resume_terminal_verify_pod_count" \
   --arg verify_job "$verify_job" \
   --arg verify_job_uid "$verify_job_uid" \
   --arg verify_pod "$verify_pod" \
   --arg verify_pod_uid "$verify_pod_uid" \
+  --argjson final_start_job_count "$final_start_job_count" \
+  --argjson final_resume_job_count "$final_resume_job_count" \
+  --argjson final_verify_job_count "$final_verify_job_count" \
+  --argjson final_start_pod_count "$final_start_pod_count" \
+  --argjson final_resume_pod_count "$final_resume_pod_count" \
+  --argjson final_verify_pod_count "$final_verify_pod_count" \
   '{
-    schema_version: 1,
+    schema_version: 2,
     kind: "benchhandoff-agentrun-two-manager-takeover-evidence",
     source_revision: $source_revision,
     source_tree_clean: true,
@@ -1616,6 +2037,7 @@ jq -n -S \
     takeovers: [
       {
         action: "start",
+        boundary: "active-job",
         manager_before: {
           name: $start_manager_before,
           uid: $start_manager_before_uid
@@ -1626,7 +2048,8 @@ jq -n -S \
         },
         passive_before: {
           name: $start_passive_before,
-          uid: $start_passive_before_uid
+          uid: $start_passive_before_uid,
+          restart_count: $start_passive_restart_count_before
         },
         lease_before: {
           resource_version: $start_lease_resource_version_before,
@@ -1638,6 +2061,12 @@ jq -n -S \
           holder: $start_holder_after,
           transitions: $start_transitions_after
         },
+        lease_final: {
+          resource_version: $start_lease_resource_version_final,
+          holder: $start_holder_final,
+          transitions: $start_transitions_final
+        },
+        passive_restart_count_final: $start_passive_restart_count_final,
         job_before: {name: $start_job, uid: $start_job_uid},
         job_after: {name: $start_job_after, uid: $start_job_uid_after},
         pod_before: {name: $start_pod, uid: $start_pod_uid},
@@ -1649,6 +2078,34 @@ jq -n -S \
       },
       {
         action: "resume",
+        boundary: "terminal-result-pending-status",
+        fault_injection: {
+          method: "business-clusterrolebinding-removal",
+          lease_permissions_retained: true,
+          business_permissions_denied_during_completion: true,
+          binding_sha256_before: $resume_business_rbac_sha256_before,
+          binding_sha256_after: $resume_business_rbac_sha256_after
+        },
+        terminal_window: {
+          job_complete: true,
+          job_failed: false,
+          job_resource_version: $resume_terminal_job_resource_version,
+          job_completion_time: $resume_terminal_job_completion_time,
+          pod_exit_code: 0,
+          pod_finished_at: $resume_terminal_pod_finished_at,
+          result_sha256: $resume_terminal_result_sha256,
+          step_outcome: "completed",
+          agent_run_phase: $resume_terminal_agentrun_phase,
+          agent_run_resource_version: $resume_terminal_agentrun_resource_version,
+          active_job_ref: {
+            action: "resume",
+            name: $resume_job,
+            uid: $resume_job_uid
+          },
+          bundle_sha256: "",
+          verify_job_count: $resume_terminal_verify_job_count,
+          verify_pod_count: $resume_terminal_verify_pod_count
+        },
         manager_before: {
           name: $resume_manager_before,
           uid: $resume_manager_before_uid
@@ -1659,7 +2116,8 @@ jq -n -S \
         },
         passive_before: {
           name: $resume_passive_before,
-          uid: $resume_passive_before_uid
+          uid: $resume_passive_before_uid,
+          restart_count: $resume_passive_restart_count_before
         },
         lease_before: {
           resource_version: $resume_lease_resource_version_before,
@@ -1671,6 +2129,12 @@ jq -n -S \
           holder: $resume_holder_after,
           transitions: $resume_transitions_after
         },
+        lease_final: {
+          resource_version: $resume_lease_resource_version_final,
+          holder: $resume_holder_final,
+          transitions: $resume_transitions_final
+        },
+        passive_restart_count_final: $resume_passive_restart_count_final,
         job_before: {name: $resume_job, uid: $resume_job_uid},
         job_after: {name: $resume_job_after, uid: $resume_job_uid_after},
         pod_before: {name: $resume_pod, uid: $resume_pod_uid},
@@ -1685,17 +2149,23 @@ jq -n -S \
       {
         action: "start",
         job: {name: $start_job_after, uid: $start_job_uid_after},
-        pod: {name: $start_pod_after, uid: $start_pod_uid_after}
+        pod: {name: $start_pod_after, uid: $start_pod_uid_after},
+        job_count: $final_start_job_count,
+        pod_count: $final_start_pod_count
       },
       {
         action: "resume",
         job: {name: $resume_job_after, uid: $resume_job_uid_after},
-        pod: {name: $resume_pod_after, uid: $resume_pod_uid_after}
+        pod: {name: $resume_pod_after, uid: $resume_pod_uid_after},
+        job_count: $final_resume_job_count,
+        pod_count: $final_resume_pod_count
       },
       {
         action: "verify",
         job: {name: $verify_job, uid: $verify_job_uid},
-        pod: {name: $verify_pod, uid: $verify_pod_uid}
+        pod: {name: $verify_pod, uid: $verify_pod_uid},
+        job_count: $final_verify_job_count,
+        pod_count: $final_verify_pod_count
       }
     ],
     retained_negative_controls: [
@@ -1717,7 +2187,8 @@ jq -n -S \
   }' > "$EVIDENCE_DIR/takeover-evidence.json"
 
 jq -e '
-  .kind == "benchhandoff-agentrun-two-manager-takeover-evidence"
+  .schema_version == 2
+  and .kind == "benchhandoff-agentrun-two-manager-takeover-evidence"
   and .source_tree_clean
   and (.source_revision | test("^[0-9a-f]{40}$"))
   and (.agent_run.uid |
@@ -1737,7 +2208,7 @@ jq -e '
       test("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))
     and .manager_before.name != .manager_after.name
     and .manager_before.uid != .manager_after.uid
-    and .passive_before == .manager_after
+    and ((.passive_before | {name, uid}) == .manager_after)
     and (.lease_before.holder |
       startswith($takeover.manager_before.name + "_"))
     and (.lease_after.holder |
@@ -1746,7 +2217,12 @@ jq -e '
     and .lease_before.resource_version != .lease_after.resource_version
     and (.lease_before.resource_version | test("^[0-9]+$"))
     and (.lease_after.resource_version | test("^[0-9]+$"))
+    and (.lease_final.resource_version | test("^[0-9]+$"))
     and .lease_after.transitions == (.lease_before.transitions + 1)
+    and .lease_final.holder == .lease_after.holder
+    and .lease_final.transitions == .lease_after.transitions
+    and .passive_before.restart_count == 0
+    and .passive_restart_count_final == .passive_before.restart_count
     and (.job_before.name |
       test("^agentrun-(start|resume)-[0-9a-f]{16}$"))
     and (.job_before.uid |
@@ -1761,7 +2237,44 @@ jq -e '
     and .pod_count_before == 1
     and .pod_count_after == 1
   )
+  and .takeovers[0].action == "start"
+  and .takeovers[0].boundary == "active-job"
+  and .takeovers[1].action == "resume"
+  and .takeovers[1].boundary == "terminal-result-pending-status"
+  and .takeovers[1].fault_injection.method ==
+    "business-clusterrolebinding-removal"
+  and .takeovers[1].fault_injection.lease_permissions_retained
+  and .takeovers[1].fault_injection.business_permissions_denied_during_completion
+  and (.takeovers[1].fault_injection.binding_sha256_before |
+    test("^[0-9a-f]{64}$"))
+  and .takeovers[1].fault_injection.binding_sha256_before ==
+    .takeovers[1].fault_injection.binding_sha256_after
+  and .takeovers[1].terminal_window.job_complete
+  and .takeovers[1].terminal_window.job_failed == false
+  and (.takeovers[1].terminal_window.job_resource_version |
+    test("^[0-9]+$"))
+  and (.takeovers[1].terminal_window.job_completion_time |
+    test("Z$"))
+  and .takeovers[1].terminal_window.pod_exit_code == 0
+  and (.takeovers[1].terminal_window.pod_finished_at | test("Z$"))
+  and (.takeovers[1].terminal_window.result_sha256 |
+    test("^[0-9a-f]{64}$"))
+  and .takeovers[1].terminal_window.step_outcome == "completed"
+  and .takeovers[1].terminal_window.agent_run_phase == "Running"
+  and (.takeovers[1].terminal_window.agent_run_resource_version |
+    test("^[0-9]+$"))
+  and .takeovers[1].terminal_window.active_job_ref.action == "resume"
+  and (
+    (
+      .takeovers[1].terminal_window.active_job_ref
+      | {name, uid}
+    ) == .takeovers[1].job_before
+  )
+  and .takeovers[1].terminal_window.bundle_sha256 == ""
+  and .takeovers[1].terminal_window.verify_job_count == 0
+  and .takeovers[1].terminal_window.verify_pod_count == 0
   and (.final_actions | map(.action) == ["start", "resume", "verify"])
+  and all(.final_actions[]; .job_count == 1 and .pod_count == 1)
   and .takeovers[0].job_after == .final_actions[0].job
   and .takeovers[0].pod_after == .final_actions[0].pod
   and .takeovers[1].job_after == .final_actions[1].job
@@ -1795,4 +2308,4 @@ python "$REPOSITORY_ROOT/tools/verify_public_privacy.py" \
 verify_bound_source_revision
 EVIDENCE_COMPLETE="yes"
 
-echo "PASS: real kind AgentRun two-manager Lease takeovers, exact runner identities, approval, verify, and fail-closed cases"
+echo "PASS: real kind AgentRun live-start and terminal-result Lease takeovers, exact runner identities, approval, verify, and fail-closed cases"

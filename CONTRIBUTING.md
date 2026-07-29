@@ -81,12 +81,14 @@ The registered real-API integration gate is
 access to pinned downloads and images, and enough resources for its disposable
 kind node, local registry, and two manager Pods. The v0.5 gate deletes
 the current Lease holder through a UID-preconditioned request while synthetic
-start and resume Jobs are separately paused. It cordons the single node,
-requires the exact pre-existing passive Pod to acquire the next Lease
-transition without changing the single Job/Pod identities, restores node
-scheduling, and writes two privacy-gated files only for a trusted successful
-upload context. Review the script's exact bounded resource names and cleanup
-report before using it on a shared Docker host.
+start is live and again after a terminal resume result remains pending behind
+a temporary business-RBAC barrier. It cordons the single node, preserves the
+separate Lease permissions, requires the exact pre-existing passive Pod to
+acquire the next Lease transition without changing the single Job/Pod
+identities, restores the exact business binding and node scheduling, and
+writes two privacy-gated files only for a trusted successful upload context.
+Review the script's exact bounded resource names and cleanup report before
+using it on a shared Docker host.
 
 Tests that create symlinks can be skipped when the operating system or account
 does not permit symlink creation. Report skips separately from passes; never

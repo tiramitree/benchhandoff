@@ -96,12 +96,21 @@ For a version 0.4 or later `AgentRun` candidate, additionally stop unless:
   no-general-compatibility, and no-production boundaries;
 - for v0.5, the exact Lease is precreated and its
   `resourceNames`-restricted Role permits only `get` and `update`;
-- for v0.5, each registered gate starts and ends on the same clean
-  commit, binds one stable Lease version to both manager Pod UIDs, cordons the
-  node, UID-precondition deletes the holder, requires the pre-existing passive
-  to acquire exactly the next transition, restores scheduling and two Ready
-  replicas, and preserves measured one-object start/resume Job and Pod
-  identities;
+- for v0.5, the registered gate starts and ends on the same clean commit,
+  binds each takeover's stable Lease version to both manager Pod UIDs, cordons
+  the node, and UID-precondition deletes the holder once during a live `start`
+  and once after a successful terminal `resume` result remains pending in
+  `AgentRun` status behind the bounded business-RBAC barrier;
+- for v0.5, the pre-existing passive must acquire exactly the next Lease
+  transition; the harness must restore and verify the registered business
+  binding, scheduling, and two Ready replicas; that passive Pod UID and manager
+  container restart count must remain unchanged, and the final Lease holder and
+  transition count must equal the post-takeover observation; start and resume
+  Job/Pod identities must remain unchanged across their takeovers; and the
+  final start/resume/verify cardinalities must each be one Job and one Pod;
+- for v0.5, takeover evidence must use schema 2. Schema 1 candidate artifacts
+  are historical only and do not satisfy the terminal-result, restored-RBAC,
+  or final-cardinality gate;
 - for v0.5, the privacy-gated takeover JSON and its one-entry
   checksum are the only two regular artifact files, pass the repository privacy
   scanner, and are uploaded only by a successful trusted push or dispatch; the
@@ -204,7 +213,8 @@ its one-entry checksum. The distribution checksum retains the asset name
 asset name `agentrun-takeover-SHA256SUMS`. Renaming must not alter its contents,
 which continue to name `takeover-evidence.json`. Download both evidence assets
 again and verify that relationship before treating the release record as
-complete.
+complete. The evidence JSON must use schema 2; a historical schema 1 candidate
+artifact is not a release substitute.
 
 ## 6. Optional package-registry gate
 

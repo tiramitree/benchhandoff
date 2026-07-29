@@ -196,10 +196,12 @@ exact match. It does not create a second Job merely because informer state was
 lost.
 
 Version 0.4 tested that restart/adoption behavior for one manager in one kind
-cluster. Version 0.5 changes the reference Deployment to
-exactly two managers using the fixed Lease above. Its registered gate pauses a
-synthetic runner and removes the current Lease-holder manager once while
-`start` is live and once while `resume` is live. Each gate requires:
+cluster. Version 0.5 changes the reference Deployment to exactly two managers
+using the fixed Lease above. Its registered gate removes the current
+Lease-holder manager once while `start` is live. For `resume`, it temporarily
+removes the business ClusterRoleBinding while retaining Lease permissions,
+requires the Job result to become terminal while `AgentRun` status still binds
+that resume Job, and then removes the holder. The gates require:
 
 - a clean exact source commit and two running Ready manager Pods;
 - one stable Lease resource version bound to the exact holder and non-holder
@@ -208,15 +210,19 @@ synthetic runner and removes the current Lease-holder manager once while
 - the previously observed non-holder, with the same UID, acquiring exactly the
   next Lease transition;
 - node uncordon and restoration of two Ready replicas;
-- the same measured live Job and Pod names and UIDs across takeover; and
+- the same measured Job and Pod names and UIDs across takeover;
 - measured one-Job and one-Pod cardinality before and after.
 
-The runner gate is released only after those conditions pass. The final
-lifecycle still requires exact approval, resume, and a separate verify Job.
-The gate assumes one kind node and continuously available API-server storage.
-It does not exercise network partitions, a stalled-but-running old leader,
-storage fencing, arbitrary runner Pod loss, multiple nodes, or multiple
-clusters.
+The `start` runner is released only after its live takeover passes. The
+`resume` runner is released while business permissions are denied to both
+managers; the gate records the successful terminal Job and Pod, result digest,
+unchanged pending `AgentRun` binding, and absent verify workload. After the
+passive manager acquires the Lease, the harness restores and verifies the
+registered RBAC shape, then observes successor convergence. The final
+lifecycle still requires exact approval and a separate verify Job. The gate
+assumes one kind node and continuously available API-server storage. It does
+not exercise network partitions, a stalled-but-running old leader, storage
+fencing, arbitrary runner Pod loss, multiple nodes, or multiple clusters.
 
 ## Validation
 
@@ -229,12 +235,12 @@ commit or tag being evaluated.
 
 The registered real-kind gate runs Go formatting, module verification, vet,
 race tests, and one bounded real-API lifecycle. It covers a deliberate
-version 3 task failure, exact approval, bound resume, fresh verification,
-manager restart or takeover, declared suite-digest mismatch, wrong approval,
-duplicate matching Pod rejection, and the generated runner security context.
-It emits only `takeover-evidence.json` and `SHA256SUMS` to a new bounded
-temporary evidence directory after the relationship, topology, and privacy
-checks pass.
+version 3 task failure, exact approval, bound resume, fresh verification, a
+live-start takeover, a terminal-resume/pending-status takeover, declared
+suite-digest mismatch, wrong approval, duplicate matching Pod rejection, and
+the generated runner security context. It emits only
+`takeover-evidence.json` and `SHA256SUMS` to a new bounded temporary evidence
+directory after the relationship, topology, and privacy checks pass.
 
 These are maintainer-operated synthetic procedures for one disposable
 single-node environment. Even a successful exact-revision execution is not
