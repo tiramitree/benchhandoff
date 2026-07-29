@@ -10,7 +10,7 @@ from pathlib import Path
 def wait_for_release(name: str) -> None:
     """Keep the synthetic runner live until the E2E gate releases it."""
 
-    marker = Path(os.environ["TMPDIR"], name)
+    marker = Path("/tmp", name)
     deadline = time.monotonic() + 480
     while time.monotonic() < deadline:
         if marker.is_file():

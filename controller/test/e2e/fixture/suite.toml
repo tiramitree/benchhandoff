@@ -10,7 +10,7 @@ size = 99
 [workspace]
 root = "workspace"
 manifest = "workspace.snapshot.json"
-digest = "sha256:a5e9032f253221f1b89e66b721300a2a4e4d12c40aefde859afb015707b1593d"
+digest = "sha256:96daac32e2796083ae4e5532b618d4c8721c6d698930083e34df42cbe8c7cfd9"
 size = 483
 policy = "closed-world-primary-stream-v1"
 

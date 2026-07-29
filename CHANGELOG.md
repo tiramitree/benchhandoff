@@ -57,6 +57,12 @@ or adoption is asserted.
   explicit RBAC denial as fatal. The harness now requires both status 1 and
   exact output `no`; operational query errors still fail closed. This was also
   a harness failure, not a takeover-test result.
+- The following exact-commit run again passed ordinary CI and reached the first
+  live `start` takeover, but the synthetic task had already exited because
+  version 3 intentionally excludes parent environment variables and the
+  fixture tried to read `TMPDIR`. The fixture now reads the fixed audited
+  `/tmp` empty-directory mount directly, and its workspace hashes are rebound.
+  No takeover evidence artifact was emitted by that fixture failure.
 - No immutable candidate commit has yet passed both the real kind takeover gate
   and ordinary public CI matrix. No v0.5 evidence artifact or release is
   claimed.
