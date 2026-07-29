@@ -57,6 +57,7 @@ from benchhandoff.storage import (
     move_regular_same_filesystem,
     nearest_existing_directory,
     normalize_relative_file,
+    path_lexists,
     prepare_new_directory,
     read_json_file,
     read_regular_bytes,
@@ -594,8 +595,8 @@ def _recovery_workspace_observation(
             artifact,
             label=f"recovery destination for {relative!r}",
         )
-        source_exists = os.path.lexists(source)
-        destination_exists = os.path.lexists(destination)
+        source_exists = path_lexists(source)
+        destination_exists = path_lexists(destination)
         if source_exists and destination_exists:
             raise EvidenceError(
                 f"both unverified output and its quarantine destination exist for {relative!r}"
@@ -2453,8 +2454,8 @@ def _recover_incomplete_task(context: _RunContext, task: TaskSpec) -> None:
         )
         destination_name = _quarantine_name(task.task_id, attempt_number, relative)
         destination = quarantine_root / destination_name
-        source_exists = os.path.lexists(source)
-        destination_exists = os.path.lexists(destination)
+        source_exists = path_lexists(source)
+        destination_exists = path_lexists(destination)
         if source_exists and destination_exists:
             raise EvidenceError(
                 f"both unverified output and its quarantine destination exist for {relative!r}"
@@ -3181,7 +3182,7 @@ def _quarantine_observation(
             artifact,
             label=f"quarantine candidate for {relative!r}",
         )
-        if not os.path.lexists(candidate):
+        if not path_lexists(candidate):
             observations.append(
                 {
                     "source": relative,

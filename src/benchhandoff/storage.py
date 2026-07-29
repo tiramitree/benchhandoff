@@ -38,6 +38,26 @@ _WINDOWS_RESERVED_NAMES = {
 }
 
 
+def _path_for_os(path: Path | str) -> str:
+    """Return a Windows extended-length path for direct filesystem calls."""
+
+    value = os.fspath(path)
+    if os.name != "nt":
+        return value
+    absolute = os.path.abspath(value)
+    if absolute.startswith("\\\\?\\") or absolute.startswith("\\\\.\\"):
+        return absolute
+    if absolute.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + absolute[2:]
+    return "\\\\?\\" + absolute
+
+
+def path_lexists(path: Path | str) -> bool:
+    """Return whether a path or symlink exists, including long Windows paths."""
+
+    return os.path.lexists(_path_for_os(path))
+
+
 def windows_component_key(value: str, *, label: str) -> str:
     """Return a conservative Windows alias key for one portable component."""
 
@@ -175,9 +195,9 @@ def resolve_member(root: Path | str, relative: str, *, label: str) -> Path:
     current = resolved_root
     for part in normalized.split("/"):
         current = current / part
-        if not os.path.lexists(current):
+        if not path_lexists(current):
             continue
-        metadata = current.lstat()
+        metadata = os.lstat(_path_for_os(current))
         if stat.S_ISLNK(metadata.st_mode):
             raise BoundaryError(f"{label} crosses a symlink: {current}")
         if current != candidate and not stat.S_ISDIR(metadata.st_mode):
@@ -191,7 +211,7 @@ def resolve_member(root: Path | str, relative: str, *, label: str) -> Path:
 
 def _open_regular_readonly(path: Path, *, label: str) -> int:
     try:
-        metadata = path.lstat()
+        metadata = os.lstat(_path_for_os(path))
     except FileNotFoundError as exc:
         raise BoundaryError(f"{label} does not exist: {path}") from exc
     if stat.S_ISLNK(metadata.st_mode):
@@ -203,7 +223,7 @@ def _open_regular_readonly(path: Path, *, label: str) -> int:
     flags |= getattr(os, "O_BINARY", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(path, flags)
+        descriptor = os.open(_path_for_os(path), flags)
     except OSError as exc:
         raise BoundaryError(f"unable to open {label} as a regular file: {path}: {exc}") from exc
 
@@ -376,7 +396,7 @@ def _rename_no_replace(source: Path, destination: Path, *, label: str) -> None:
     try:
         if os.name == "nt":
             # Windows os.rename fails when the destination already exists.
-            os.rename(source, destination)
+            os.rename(_path_for_os(source), _path_for_os(destination))
             return
 
         import ctypes
@@ -462,7 +482,7 @@ def move_regular_same_filesystem(
     )
     source_candidate = source_parent / source_candidate.name
     destination_candidate = destination_parent / destination_candidate.name
-    if os.path.lexists(destination_candidate):
+    if path_lexists(destination_candidate):
         raise BoundaryError(f"{label} destination must start absent: {destination_candidate}")
 
     try:

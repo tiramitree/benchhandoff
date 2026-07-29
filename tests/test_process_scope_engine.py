@@ -310,10 +310,14 @@ Path("result.txt").write_text("late output", encoding="utf-8")
                             and attempts[-1]["child_pid"] is not None
                             and attempts[-1]["child_launch_guard"] is False
                         ):
-                            family = json.loads(
-                                family_path.read_text(encoding="utf-8")
-                            )
-                            break
+                            try:
+                                family = json.loads(
+                                    family_path.read_text(encoding="utf-8")
+                                )
+                            except (OSError, json.JSONDecodeError):
+                                family = {}
+                            if family:
+                                break
                     if driver.poll() is not None:
                         break
                     time.sleep(0.01)

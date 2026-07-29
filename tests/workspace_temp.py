@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 from uuid import uuid4
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _BASE = REPOSITORY_ROOT / ".test-runtime"
+
+
+def _rmtree_path(path: Path) -> Path | str:
+    """Use an extended-length root so Windows can remove long descendants."""
+
+    if os.name != "nt":
+        return path
+    absolute = str(path.resolve(strict=True))
+    if absolute.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + absolute[2:]
+    return "\\\\?\\" + absolute
 
 
 class WorkspaceTemporaryDirectory:
@@ -27,7 +39,7 @@ class WorkspaceTemporaryDirectory:
 
     def cleanup(self) -> None:
         if self.path.exists():
-            shutil.rmtree(self.path)
+            shutil.rmtree(_rmtree_path(self.path))
         try:
             _BASE.rmdir()
         except OSError:

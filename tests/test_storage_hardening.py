@@ -22,6 +22,18 @@ class StorageHardeningTests(unittest.TestCase):
     def temporary_root(self) -> WorkspaceTemporaryDirectory:
         return WorkspaceTemporaryDirectory(prefix="benchhandoff-storage-")
 
+    @unittest.skipUnless(os.name == "nt", "Windows extended-length path mapping")
+    def test_windows_os_path_mapping_is_absolute_unc_safe_and_idempotent(self) -> None:
+        drive_path = r"C:\fixture\artifact.bin"
+        unc_path = r"\\server\share\folder\artifact.bin"
+        extended_drive = r"\\?\C:\fixture\artifact.bin"
+        extended_unc = r"\\?\UNC\server\share\folder\artifact.bin"
+
+        self.assertEqual(storage._path_for_os(drive_path), extended_drive)
+        self.assertEqual(storage._path_for_os(unc_path), extended_unc)
+        self.assertEqual(storage._path_for_os(extended_drive), extended_drive)
+        self.assertEqual(storage._path_for_os(extended_unc), extended_unc)
+
     def test_windows_forbidden_characters_and_c0_controls_are_rejected(self) -> None:
         invalid = (
             "bad<name",
@@ -268,6 +280,45 @@ class StorageHardeningTests(unittest.TestCase):
                     fsync_directory.call_args_list,
                     [mock.call(source_directory), mock.call(destination_directory)],
                 )
+
+    @unittest.skipUnless(os.name == "nt", "Windows extended-length path regression")
+    def test_move_regular_same_filesystem_supports_long_windows_destination(
+        self,
+    ) -> None:
+        with self.temporary_root() as temporary:
+            root = Path(temporary)
+            source = root / "source.bin"
+            source.write_bytes(b"long-path evidence")
+            destination_directory = root / "destination"
+            destination_directory.mkdir()
+            destination_name = f"{'a' * 120}.artifact"
+            while len(str(destination_directory / destination_name)) <= 260:
+                destination_directory /= "nested-segment"
+                destination_directory.mkdir()
+            destination = destination_directory / destination_name
+
+            expected = storage.file_identity(source, label="long-path source")
+            actual = storage.move_regular_same_filesystem(
+                source,
+                destination,
+                label="long-path quarantine artifact",
+            )
+
+            self.assertGreater(len(str(destination)), 260)
+            self.assertEqual(actual, expected)
+            self.assertFalse(storage.path_lexists(source))
+            self.assertTrue(storage.path_lexists(destination))
+            self.assertEqual(
+                storage.file_identity(destination, label="long-path destination"),
+                expected,
+            )
+            self.assertEqual(
+                storage.read_regular_bytes(
+                    destination,
+                    label="long-path destination",
+                ),
+                b"long-path evidence",
+            )
 
     def test_move_regular_same_filesystem_rejects_existing_destination(self) -> None:
         with self.temporary_root() as temporary:

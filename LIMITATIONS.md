@@ -69,6 +69,11 @@ in scope.
   any other platform, directories, links, devices, and other non-regular
   partial outputs stop recovery. macOS is not a supported child-execution
   target despite having a no-replace move implementation.
+- On Windows, the deterministic quarantine destination may exceed the legacy
+  `MAX_PATH` boundary; its existence check, no-replace rename, and identity
+  read use an absolute extended-length path. This is not a claim that every
+  arbitrary path up to the Windows 32,767-character API limit works throughout
+  the suite, workspace, run, child process, or third-party tooling.
 - Cross-filesystem quarantine is unsupported. The suite, every output's
   existing parent, and the run/quarantine directory must share one filesystem.
   Version 3 additionally requires every observed workspace entry to report the

@@ -36,6 +36,16 @@ support, independent review, external use, or adoption is asserted.
   official upload is restricted to a successful trusted push or manual
   dispatch rather than a pull-request execution.
 
+### Fixed
+
+- Windows recovery now uses absolute extended-length paths for deterministic
+  quarantine destinations that exceed the legacy `MAX_PATH` boundary. The
+  no-replace move, post-move identity check, crash replay, and test cleanup are
+  covered without changing the existing same-filesystem or no-overwrite
+  contract.
+- The Windows hard-exit process-family test now tolerates the bounded interval
+  in which its child has created but not yet completed the small JSON fixture.
+
 ### Current validation boundary
 
 This source tree intentionally omits validation identifiers from superseded

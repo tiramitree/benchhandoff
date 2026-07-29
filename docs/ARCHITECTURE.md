@@ -226,7 +226,10 @@ Quarantine publication uses an atomic no-replace rename: Windows `os.rename`,
 Linux `renameat2(RENAME_NOREPLACE)`, or macOS
 `renamex_np(RENAME_EXCL)`. If the platform is different or the native primitive
 is unavailable, recovery fails closed. macOS is not otherwise a supported task
-execution target.
+execution target. Windows converts the checked source and deterministic
+quarantine destination to absolute extended-length paths at the existence,
+rename, and identity-read system-call boundaries; this narrow handling is not
+general 32,767-character path support for every operation.
 
 `snapshot-workspace` exclusively creates a start-absent manifest candidate and
 re-verifies it. A failure retains the candidate for review instead of deleting
