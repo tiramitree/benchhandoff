@@ -36,10 +36,13 @@ grandchild = subprocess.Popen(
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL,
 )
-Path(sys.argv[1]).write_text(
+marker = Path(sys.argv[1])
+candidate = marker.with_suffix(".candidate")
+candidate.write_text(
     json.dumps({"child": os.getpid(), "grandchild": grandchild.pid}),
     encoding="utf-8",
 )
+os.replace(candidate, marker)
 time.sleep(120)
 """
 
