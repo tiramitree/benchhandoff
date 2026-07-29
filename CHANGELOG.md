@@ -51,8 +51,15 @@ or adoption is asserted.
   runner-only temporary-directory context. The candidate now scopes that
   expression to the runner steps. This was a workflow-definition failure, not
   a takeover-test result.
-- The real kind takeover gate and public CI have not yet passed on an immutable
-  candidate commit. No v0.5 evidence artifact or release is claimed.
+- The next exact-commit run passed ordinary CI, Go race tests, cluster creation,
+  and the two-manager rollout, then stopped before creating an `AgentRun`
+  because the shell treated `kubectl auth can-i`'s expected exit status for an
+  explicit RBAC denial as fatal. The harness now requires both status 1 and
+  exact output `no`; operational query errors still fail closed. This was also
+  a harness failure, not a takeover-test result.
+- No immutable candidate commit has yet passed both the real kind takeover gate
+  and ordinary public CI matrix. No v0.5 evidence artifact or release is
+  claimed.
 
 The candidate is a fixed active/passive takeover experiment with one kind node
 and continuously available API-server storage. It does not establish strict

@@ -892,7 +892,7 @@ release_runner_gate() {
 }
 
 assert_lease_rbac() {
-  local service_account verb answer
+  local service_account verb answer auth_status
   service_account="system:serviceaccount:$SYSTEM_NAMESPACE:agentrun-controller"
   for verb in get update; do
     answer="$("$KUBECTL" auth can-i "$verb" \
@@ -903,23 +903,26 @@ assert_lease_rbac() {
       fail "manager ServiceAccount cannot $verb the exact leader-election Lease"
   done
   for verb in create list watch patch delete; do
+    auth_status=0
     answer="$("$KUBECTL" auth can-i "$verb" leases.coordination.k8s.io \
       --as="$service_account" \
-      -n "$SYSTEM_NAMESPACE")"
-    [[ "$answer" == "no" ]] ||
-      fail "manager ServiceAccount can unexpectedly $verb Leases"
+      -n "$SYSTEM_NAMESPACE")" || auth_status=$?
+    [[ "$auth_status" == "1" && "$answer" == "no" ]] ||
+      fail "Lease denial check for $verb was not one explicit authorization denial"
   done
+  auth_status=0
   answer="$("$KUBECTL" auth can-i update \
     leases.coordination.k8s.io/not-the-registered-lease \
     --as="$service_account" \
-    -n "$SYSTEM_NAMESPACE")"
-  [[ "$answer" == "no" ]] ||
-    fail "manager ServiceAccount can update another Lease in the system namespace"
+    -n "$SYSTEM_NAMESPACE")" || auth_status=$?
+  [[ "$auth_status" == "1" && "$answer" == "no" ]] ||
+    fail "another-Lease check was not one explicit authorization denial"
+  auth_status=0
   answer="$("$KUBECTL" auth can-i get leases.coordination.k8s.io \
     --as="$service_account" \
-    -n "$TEST_NAMESPACE")"
-  [[ "$answer" == "no" ]] ||
-    fail "manager ServiceAccount can read Leases outside the system namespace"
+    -n "$TEST_NAMESPACE")" || auth_status=$?
+  [[ "$auth_status" == "1" && "$answer" == "no" ]] ||
+    fail "cross-namespace check was not one explicit authorization denial"
 }
 
 ready_reason() {

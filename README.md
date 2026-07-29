@@ -260,8 +260,8 @@ The current local Windows candidate checkpoint reported:
   inside a separate local repository boundary.
 
 The Go race test is unavailable in the current local Windows environment. The
-real kind takeover gate and public CI have **not** yet passed on an immutable
-v0.5.0 candidate commit. These
+No immutable v0.5.0 candidate commit has yet passed both the real kind takeover
+gate and ordinary public CI matrix. These
 mutable local results are neither a release record nor public evidence, and no
 candidate takeover artifact is claimed.
 

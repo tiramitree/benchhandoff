@@ -117,8 +117,8 @@ in scope.
   plane. Its observed integration target is one manager and one node in kind
   v0.32.0 with Kubernetes v1.36.1. The unreleased v0.5 candidate changes the
   reference deployment to exactly two managers using one namespaced Lease, but
-  its real-kind and public-CI gates have not yet passed on an immutable v0.5
-  commit. Other Kubernetes releases,
+  no immutable v0.5 commit has yet passed both its ordinary public-CI matrix
+  and real-kind gate. Other Kubernetes releases,
   storage classes, container runtimes, architectures, admission stacks, and
   network policies have not been validated.
 - The candidate Lease settings are fixed at a 15-second duration, 10-second
@@ -196,8 +196,8 @@ in scope.
   production configuration, compatibility matrix, or support commitment.
 - The public v0.4 kind test uses synthetic local fixtures and one disposable
   registry. The candidate v0.5 gate would additionally produce one bounded
-  privacy-gated takeover record and checksum, but it has not yet passed on an
-  immutable v0.5 commit. Neither
+  privacy-gated takeover record and checksum, but no immutable v0.5 commit has
+  yet passed both the ordinary public-CI matrix and this real-kind gate. Neither
   gate measures throughput, latency, scale, noisy-neighbor behavior,
   long-duration stability, production recovery, or real model/agent quality.
 
@@ -305,8 +305,8 @@ and PASS for Go formatting, module-tidiness verification, module verification,
 `go vet`, and unit tests. A trimpath manager build passed locally with
 `-buildvcs=false`, required because this worktree is nested inside another
 local repository boundary. The Go race test is unavailable in the current
-local Windows environment. Real kind and public CI have not yet passed on an
-immutable v0.5 commit.
+local Windows environment. No immutable v0.5 commit has yet passed both the
+ordinary public-CI matrix and real-kind gate.
 These mutable local observations are not release or takeover evidence.
 
 Recorded v0.4 validation is maintainer-operated and synthetic. It includes the
