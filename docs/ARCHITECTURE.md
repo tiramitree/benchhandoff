@@ -83,7 +83,7 @@ still defines suite, run, workspace, resume, and bundle semantics. See
 [`AGENTRUN_CONTROLLER.md`](AGENTRUN_CONTROLLER.md) for approval, restart,
 security, and validation boundaries.
 
-The unreleased v0.5 candidate keeps that CRD and lifecycle unchanged, but runs
+Version 0.5 keeps that CRD and lifecycle unchanged, but runs
 the reference manager as a fixed active/passive pair:
 
 ```text
@@ -109,7 +109,7 @@ patch, delete, other-Lease update, or cross-namespace Lease access. The
 reference ClusterRole used for AgentRun, Job, and Pod reconciliation remains a
 separate broader scope.
 
-Two windows receive explicit candidate handling:
+Two windows receive explicit v0.5 handling:
 
 ```text
 Create deterministic Job
@@ -130,7 +130,7 @@ Status Update
         +-- conflict -> discard stale candidate -> delayed fresh reconcile
 ```
 
-The candidate gate starts from a clean commit. For each paused synthetic
+The registered v0.5 gate starts from a clean commit. For each paused synthetic
 `start` and `resume` Job, it binds one stable Lease resource version to both
 manager Pod UIDs, cordons the node, and UID-precondition deletes the holder.
 Only the pre-existing non-holder may acquire exactly the next transition. The

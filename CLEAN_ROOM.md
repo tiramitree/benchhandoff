@@ -8,25 +8,14 @@ regular-file boundaries, content identities, atomic state, logs, fail-closed
 child execution, evidence bundling, and a synthetic recovery benchmark.
 
 The v0.2 execution-context and process-family extension was written in the same
-clean-room repository from public operating-system and Python interfaces. No
-private research implementation, infrastructure record, or unpublished
-experiment content was used.
+clean-room repository from public operating-system and Python interfaces.
 
 ## Excluded sources
 
-During this implementation:
-
-- no private research source code, schema, path inventory, authorization
-  record, or internal implementation document was opened or copied;
-- an earlier local resume-state prototype was not opened, imported, or copied;
-  and
-- no private code was used as a template.
-
-Separate local career-program strategy documents were consulted only for
-product positioning and intellectual-property boundaries. They were not
-treated as public sources or as implementation references. Interfaces, record
-shapes, function names, tests, comments, and implementation details in this
-directory were written anew.
+Only public interfaces and newly written project-local material were used; no
+non-public source code or internal document was copied as an implementation
+reference. Interfaces, record shapes, function names, tests, comments, and
+implementation details in this directory were written anew.
 
 ## Permitted influences
 

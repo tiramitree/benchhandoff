@@ -23,6 +23,34 @@ HOME_RE = re.compile(
     rb"|/(?:Users|home)/[^/\s]+)",
     re.IGNORECASE,
 )
+TIMEZONE_FIELD_RE = re.compile(
+    rb'"timezone"\s*:\s*"([^"]+)"',
+    re.IGNORECASE,
+)
+UTC_OFFSET_RE = re.compile(
+    rb"\b(?:UTC|GMT)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?\b",
+    re.IGNORECASE,
+)
+ISO_OFFSET_RE = re.compile(
+    rb"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"
+    rb"(?::\d{2}(?:\.\d+)?)?([+-])(\d{2}):?(\d{2})\b",
+)
+PLATFORM_METADATA_RE = re.compile(
+    rb'"(?:platform_details|os_description)"\s*:\s*"([^"]+)"',
+    re.IGNORECASE,
+)
+ALLOWED_GENERIC_TIMEZONES = {b"utc", b"etc/utc", b"gmt", b"z"}
+ALLOWED_GENERIC_PLATFORMS = {
+    b"aix",
+    b"darwin",
+    b"freebsd",
+    b"linux",
+    b"netbsd",
+    b"openbsd",
+    b"testos",
+    b"unknown",
+    b"windows",
+}
 IPV4_RE = re.compile(rb"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
 TOKEN_RE = re.compile(
     rb"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}"
@@ -74,6 +102,16 @@ def private_network_present(data: bytes) -> bool:
     return False
 
 
+def nonzero_timezone_offset_present(data: bytes) -> bool:
+    for pattern in (UTC_OFFSET_RE, ISO_OFFSET_RE):
+        for match in pattern.finditer(data):
+            hour = int(match.group(2))
+            minute = int(match.group(3) or b"0")
+            if hour != 0 or minute != 0:
+                return True
+    return False
+
+
 def categories_for(relative: str, data: bytes) -> tuple[str, ...]:
     findings: set[str] = set()
     if any(not allowed_noreply(match.group(0)) for match in EMAIL_RE.finditer(data)):
@@ -84,6 +122,16 @@ def categories_for(relative: str, data: bytes) -> tuple[str, ...]:
         findings.add("credential_token_shape")
     if PRIVATE_KEY_MARKER in data or OPENSSH_PRIVATE_KEY_MARKER in data:
         findings.add("private_key_material")
+    if any(
+        match.group(1).strip().lower() not in ALLOWED_GENERIC_TIMEZONES
+        for match in TIMEZONE_FIELD_RE.finditer(data)
+    ) or nonzero_timezone_offset_present(data):
+        findings.add("local_timezone_metadata")
+    if any(
+        match.group(1).strip().lower() not in ALLOWED_GENERIC_PLATFORMS
+        for match in PLATFORM_METADATA_RE.finditer(data)
+    ):
+        findings.add("exact_host_platform_metadata")
     if (
         not fixture_allowed(relative, ALLOWED_NETWORK_FIXTURES)
         and private_network_present(data)

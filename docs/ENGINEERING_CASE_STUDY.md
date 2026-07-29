@@ -240,37 +240,25 @@ That assistance is disclosed because a technical interview should evaluate the
 user's ability to explain, challenge, validate, and extend the system—not rely
 on an implication of unaided keystroke authorship.
 
-No private research implementation was copied into this repository. The
-clean-room boundary is recorded in `CLEAN_ROOM.md`.
+No non-public source code or internal material was copied into this
+repository. The clean-room boundary is recorded in `CLEAN_ROOM.md`.
 
 ## Relevance—and its current limit
 
-The same failure shape appears in agent evaluations, model benchmarks, and
-embodied-simulation batches: expensive ordered stages, partial outputs, retries,
-and pressure to preserve evidence. Approval-gated agent harnesses add one more
-problem: an approval can become stale before execution. BenchHandoff
-demonstrates systems reasoning about both shapes without claiming to be a full
-agent runtime.
+The same failure shape appears in agent evaluations and model benchmarks:
+expensive ordered stages, partial outputs, retries, and pressure to preserve
+evidence. Approval-gated agent harnesses add one more problem: an approval can
+become stale before execution. BenchHandoff demonstrates systems reasoning
+about both shapes without claiming to be a full agent runtime.
 
-It has **not** been deployed in an agent stack, integrated with Genie Sim,
-validated on a GPU workload, or adopted by an external user. Version 2
-code-bearing commit `pre-rewrite-commit-retired` completed all
-ten jobs in public main-branch
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions):
-eight Ubuntu 24.04 and Windows Server 2025 jobs across CPython 3.11 through
-3.14, the canonical synthetic-evidence job, and the exact-distribution job.
-Release commit `pre-rewrite-commit-retired` repeated all ten
-gates in public
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions);
-the annotated
-[v0.2.0 release](https://github.com/tiramitree/benchhandoff/releases/tag/v0.2.0)
-binds that run's exact distribution and five-file synthetic evidence.
-
-That is maintainer-operated synthetic validation and distribution, not
-production, independent, or external-use evidence. The canonical
+It has **not** been deployed in an external application stack or adopted by an
+external user. Checked-in tests and workflows define maintainer-operated
+synthetic validation procedures; their outcomes apply only to the exact source
+revision on which they run. They are not production, independent, or
+external-use evidence. The canonical
 external-evidence ledger, as of 2026-07-24, therefore reports zero independent
 reproductions, independent users, institutional adopters, and third-party
 reviews; an opened Issue cannot change those counts. The next evidence of a
 genuinely different kind would be independent reproduction or real external
-use. Until either exists, it remains a goal, not a résumé claim. See
+use. Until either exists, it remains a goal, not a resume claim. See
 [the ledger taxonomy and review rules](EXTERNAL_EVIDENCE.md).

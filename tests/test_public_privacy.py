@@ -53,6 +53,64 @@ class PublicPrivacyTests(unittest.TestCase):
             self.verifier.categories_for("tests/example.txt", b"127.0.0.1"),
         )
 
+    def test_non_utc_timezone_metadata_is_rejected(self) -> None:
+        value = (
+            b'{"time'
+            + b'zone":"Example/'
+            + b'Local","observed":"UTC'
+            + b"+"
+            + b'03:30"}'
+        )
+        self.assertIn(
+            "local_timezone_metadata",
+            self.verifier.categories_for("evidence.json", value),
+        )
+
+    def test_compact_gmt_and_iso_offsets_are_rejected(self) -> None:
+        for value in (
+            b"GMT" + b"+" + b"7",
+            b"UTC" + b"-" + b"0430",
+            b"2026-07-29T12:00:00" + b"+" + b"06:45",
+        ):
+            with self.subTest(value_length=len(value)):
+                self.assertIn(
+                    "local_timezone_metadata",
+                    self.verifier.categories_for("evidence.json", value),
+                )
+
+    def test_zero_timezone_offsets_are_allowed(self) -> None:
+        for value in (
+            b"UTC" + b"+" + b"00:00",
+            b"GMT" + b"-" + b"0",
+            b"2026-07-29T12:00:00" + b"+" + b"0000",
+        ):
+            with self.subTest(value_length=len(value)):
+                self.assertNotIn(
+                    "local_timezone_metadata",
+                    self.verifier.categories_for("evidence.json", value),
+                )
+
+    def test_exact_host_build_metadata_is_rejected(self) -> None:
+        value = (
+            b'{"platform_'
+            + b'details":"Windows'
+            + b"-11-10.0."
+            + b'99999-SP0"}'
+        )
+        self.assertIn(
+            "exact_host_platform_metadata",
+            self.verifier.categories_for("evidence.json", value),
+        )
+
+    def test_generic_platform_metadata_is_allowed(self) -> None:
+        self.assertNotIn(
+            "exact_host_platform_metadata",
+            self.verifier.categories_for(
+                "evidence.json",
+                b'{"platform_' + b'details":"Windows"}',
+            ),
+        )
+
     def test_project_author_is_pseudonymous(self) -> None:
         self.verifier.verify_project_author(REPOSITORY_ROOT)
 

@@ -3,11 +3,11 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
-## 0.5.0 - Unreleased
+## Unreleased - 0.5.0 candidate
 
-This section describes an unreleased source candidate. No v0.5 tag, GitHub
-Release, real-kind result, public-CI result, independent review, external use,
-or adoption is asserted.
+Version 0.5.0 is a GitHub-only early version line. The controller remains
+source-only; no controller image, package-registry publication, production
+support, independent review, external use, or adoption is asserted.
 
 ### Added
 
@@ -38,36 +38,12 @@ or adoption is asserted.
 
 ### Current validation boundary
 
-- Local public-privacy verification: PASS.
-- Local Python suite: 229 passed, 4 Windows capability skips, 0 failures, and
-  0 errors.
-- Local Go formatting, module-tidiness verification, module verification,
-  `go vet`, and unit tests: PASS. The local trimpath manager build passed with
-  `-buildvcs=false` because the worktree is nested inside a separate local
-  repository boundary.
-- The Go race test is unavailable in the current local Windows environment.
-- The first feature-branch real-kind workflow attempt failed before creating a
-  job because a workflow-level environment expression referenced the
-  runner-only temporary-directory context. The candidate now scopes that
-  expression to the runner steps. This was a workflow-definition failure, not
-  a takeover-test result.
-- The next exact-commit run passed ordinary CI, Go race tests, cluster creation,
-  and the two-manager rollout, then stopped before creating an `AgentRun`
-  because the shell treated `kubectl auth can-i`'s expected exit status for an
-  explicit RBAC denial as fatal. The harness now requires both status 1 and
-  exact output `no`; operational query errors still fail closed. This was also
-  a harness failure, not a takeover-test result.
-- The following exact-commit run again passed ordinary CI and reached the first
-  live `start` takeover, but the synthetic task had already exited because
-  version 3 intentionally excludes parent environment variables and the
-  fixture tried to read `TMPDIR`. The fixture now reads the fixed audited
-  `/tmp` empty-directory mount directly, and its workspace hashes are rebound.
-  No takeover evidence artifact was emitted by that fixture failure.
-- No immutable candidate commit has yet passed both the real kind takeover gate
-  and ordinary public CI matrix. No v0.5 evidence artifact or release is
-  claimed.
+This source tree intentionally omits validation identifiers from superseded
+history. The checked-in CI and real-kind workflows define the registered
+procedures, but no current-tip public pass or v0.5 release is claimed until
+the exact final commit and tag complete those gates.
 
-The candidate is a fixed active/passive takeover experiment with one kind node
+Version 0.5 is a fixed active/passive takeover experiment with one kind node
 and continuously available API-server storage. It does not establish strict
 fencing, network-partition safety, arbitrary Pod recovery, multi-node or
 multi-cluster availability, exactly-once execution, production high
@@ -75,23 +51,12 @@ availability, external adoption, independent review, or recruiting interest.
 
 ## 0.4.0 - 2026-07-29
 
-The final v0.4 release commit is
-`pre-rewrite-commit-retired`. Its recorded public real-kind run
-is
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-its recorded tag CI is
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-and its GitHub Release record is `pre-rewrite-release-retired`.
-
-AgentRun code-bearing commit
-`pre-rewrite-commit-retired` completed the public pinned
-single-node Kubernetes
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-Commit `pre-rewrite-commit-retired` completed all ten Python,
-privacy, evidence, and exact-distribution jobs in public
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-These are maintainer-operated synthetic results, not production, independent,
-performance, or external-adoption evidence.
+Version 0.4 is a GitHub-only early release. Its current annotated tag,
+workflow results, and attached assets must be evaluated from the rewritten
+public tag and Release; superseded history identifiers are not evidence for
+the current source tree. Any recorded checks are maintainer-operated and
+synthetic, not production, independent, performance, or external-adoption
+evidence.
 
 ### Added
 
@@ -141,16 +106,14 @@ performance, or external-adoption evidence.
 
 ### Validation notes
 
-- The kind gate used Go 1.26.5, kind v0.32.0, Kubernetes v1.36.1, Kubernetes Go
-  modules v0.36.0, and digest-pinned runner and registry images.
-- The kind workflow passed Go formatting, module verification, `go vet`, and
-  `go test -race ./...` before exercising the real API server and Jobs.
-- Every Ubuntu 24.04 and Windows Server 2025 job across CPython 3.11 through
-  3.14 ran 226 tests without failures, errors, or skips at `pre-rewrite-commit-retired...`.
-- The first public Python matrix on `pre-rewrite-commit-retired...` exposed a test-helper race in
-  marker publication on Windows/Python 3.14. The helper now writes a candidate
-  and atomically replaces the visible marker; ten repeated local Windows runs
-  and the full public matrix passed after the repair.
+- The registered kind workflow runs Go formatting, module verification,
+  `go vet`, race tests, and the bounded real-API lifecycle before publishing
+  any evidence.
+- The ordinary workflow runs the declared operating-system/Python matrix,
+  privacy and license gates, synthetic evidence verification, and
+  exact-distribution smoke.
+- Workflow outcomes belong only to their exact source revision. A successful
+  result from superseded history is not carried forward to a rewritten tag.
 
 See
 [`AGENTRUN_CONTROLLER.md`](docs/AGENTRUN_CONTROLLER.md)
@@ -159,12 +122,9 @@ boundary.
 
 ## 0.3.0 - 2026-07-28
 
-Code-bearing commit `pre-rewrite-commit-retired`
-completed all ten jobs in public main-branch CI
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-That maintainer-operated synthetic validation and any tag or GitHub Release do
-not assert external adoption, performance, production reliability, or a support
-commitment.
+Version 0.3 is a GitHub-only early release. Its maintainer-operated synthetic
+validation and any tag or GitHub Release do not assert external adoption,
+performance, production reliability, or a support commitment.
 
 ### Added
 
@@ -253,20 +213,13 @@ for the detailed protocol and limits.
 
 ### Validation
 
-- Version 2 code-bearing commit
-  `pre-rewrite-commit-retired` completed all ten jobs in public
-  main-branch run
-  [pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-  Eight Ubuntu 24.04 and Windows Server 2025 jobs across CPython 3.11 through
-  3.14 each ran 186 tests without failures, errors, or skips. The two dependent
-  jobs verified the canonical synthetic evidence and build-once exact
-  distribution. This is maintainer-operated synthetic validation, not
-  production, independent, external-use, or adoption evidence.
-- Release commit `pre-rewrite-commit-retired`
-  repeated all ten gates in public
-  [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-  The annotated `v0.2.0` tag and GitHub Release bind the exact wheel, sdist,
-  checksum file, and five synthetic-evidence files from that run.
+- The registered workflow verifies the operating-system/Python matrix,
+  canonical synthetic evidence, and build-once exact distribution for the
+  exact checked-out revision.
+- This is maintainer-operated synthetic validation, not production,
+  independent, external-use, or adoption evidence. The current annotated tag
+  and Release, not identifiers copied from superseded history, are the
+  distribution record.
 
 ## 0.1.0 - 2026-07-26
 
@@ -287,8 +240,7 @@ for the detailed protocol and limits.
 - A top-level `--version` command plus source/package metadata consistency tests.
 - A public eight-job Python/operating-system matrix, commit-pinned Actions,
   canonical machine-readable benchmark artifacts, and build-once exact-wheel
-  smoke testing behind the explicit license gate. The first complete green
-  run is `pre-rewrite-run-retired` at source `pre-rewrite-commit-retired...`.
+  smoke testing behind the explicit license gate.
 - A single cross-platform synthetic-reproduction entrypoint that refuses dirty
   source, overwrite, linked or nonempty parents, and in-repository output, then
   writes two raw records, a bounded summary, a verified SHA-256 manifest, and a
@@ -305,7 +257,7 @@ for the detailed protocol and limits.
 - A canonical zero-baseline external-evidence ledger, strict structural and
   count validator, relationship/consent-aware Issue forms, and documented
   review, deduplication, and retraction rules.
-- Local Windows compatibility preflight across CPython 3.11 through 3.14,
+- Maintainer-run Windows compatibility preflight across CPython 3.11 through 3.14,
   including one-wheel installation and fail -> bound resume -> verify smoke
   coverage. This is not online CI or a final licensed distribution.
 - A cooperative local cross-process writer lock around every `start` and
@@ -313,7 +265,7 @@ for the detailed protocol and limits.
   six focused lock regressions, and a two-process synthetic contention
   benchmark. This is not a remote lease, distributed coordinator,
   network-filesystem proof, or hostile-writer boundary.
-- A commit-bound local Windows writer-lock matrix across CPython 3.11.15,
+- A commit-bound maintainer-run Windows writer-lock matrix across CPython 3.11.15,
   3.12.13, 3.13.14, and 3.14.6. Each runtime completed 129 tests with 126
   passes and the same 3 permission skips. This is not Linux, online CI,
   public-release, production, independent, or adoption evidence.

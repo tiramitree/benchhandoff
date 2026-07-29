@@ -15,14 +15,14 @@ Any ambiguous identity, evidence, workload result, or approval transition moves
 the `AgentRun` to `Blocked`. The controller does not make BenchHandoff a
 distributed scheduler, sandbox, exactly-once executor, or production service.
 
-The unreleased v0.5 candidate runs a fixed pair of managers behind one
+Version 0.5 runs a fixed pair of managers behind one
 namespaced leader-election Lease and adds two registered holder-deletion
-takeover gates. This is an active/passive reference experiment, not a released
-or production-HA claim.
+takeover gates. This is an active/passive reference experiment, not a
+production-HA claim.
 
 ## Components
 
-The candidate implementation has five deliberately small parts:
+The implementation has five deliberately small parts:
 
 1. `AgentRun` is a namespaced `control.benchhandoff.dev/v1alpha1` custom
    resource. Its immutable execution spec identifies a PVC, normalized suite
@@ -187,7 +187,7 @@ text, or arbitrary log content. A distinct verify Job must re-open and verify
 the bundle and return the same run and bundle identities before the controller
 sets `Succeeded`.
 
-## Manager restart and candidate takeover behavior
+## Manager restart and v0.5 takeover behavior
 
 Job names are deterministic functions of the run UID, action, and canonical
 execution-spec digest. Status also records the live Job UID. After a manager
@@ -195,8 +195,8 @@ restart, reconciliation re-lists the live objects and adopts only the single
 exact match. It does not create a second Job merely because informer state was
 lost.
 
-Released v0.4 tested that restart/adoption behavior for one manager in one kind
-cluster. The unreleased v0.5 candidate changes the reference Deployment to
+Version 0.4 tested that restart/adoption behavior for one manager in one kind
+cluster. Version 0.5 changes the reference Deployment to
 exactly two managers using the fixed Lease above. Its registered gate pauses a
 synthetic runner and removes the current Lease-holder manager once while
 `start` is live and once while `resume` is live. Each gate requires:
@@ -220,80 +220,35 @@ clusters.
 
 ## Validation
 
-### Unreleased v0.5 candidate
+### Registered validation procedure
 
-The current local Windows checkpoint reports public-privacy PASS, 229 Python
-passes with 4 Windows capability skips and no failures or errors, plus PASS for
-Go formatting, module-tidiness verification, module verification, `go vet`,
-and unit tests. A trimpath manager build passed with `-buildvcs=false`, needed
-because this worktree is nested inside a separate local repository boundary.
-The local Windows environment cannot run the Go race test.
+This source tree does not carry forward commit, run, artifact, or Release
+identifiers from superseded history. The ordinary CI and real-kind workflow
+pages must be checked for a run whose source revision exactly matches the
+commit or tag being evaluated.
 
-No immutable v0.5 commit has yet passed both the real kind takeover gate and
-ordinary public CI matrix. No
-candidate takeover artifact, release, independent review, external use, or
-adoption is claimed. When the registered kind gate succeeds, it is designed to
-write measured manager, Lease, Job, and Pod before/after fields into one
-bounded `takeover-evidence.json`, write one checksum entry, reject extra or
-non-regular entries, and scan both files with the repository privacy gate. CI
-uploads exactly those files only for a successful trusted push or manual
-dispatch; pull-request executions do not publish an official artifact. That
-future artifact would be maintainer-operated synthetic evidence for the exact
-single-node gate only.
+The registered real-kind gate runs Go formatting, module verification, vet,
+race tests, and one bounded real-API lifecycle. It covers a deliberate
+version 3 task failure, exact approval, bound resume, fresh verification,
+manager restart or takeover, declared suite-digest mismatch, wrong approval,
+duplicate matching Pod rejection, and the generated runner security context.
+It emits only `takeover-evidence.json` and `SHA256SUMS` to a new bounded
+temporary evidence directory after the relationship, topology, and privacy
+checks pass.
 
-CI supplies a new `E2E_EVIDENCE_DIR` outside the script scratch root, so the
-two validated files survive scratch cleanup for upload. A local run that omits
-that variable writes under `$SCRATCH_ROOT/evidence`; successful cleanup removes
-that default. Retaining local evidence requires a new, non-existing path under
-the temporary root.
+These are maintainer-operated synthetic procedures for one disposable
+single-node environment. Even a successful exact-revision execution is not
+production use, independent reproduction, performance evidence, external
+adoption, partition-safety evidence, a compatibility matrix, or production
+high availability. Earlier create/response-loss and status-conflict windows
+remain fake-client unit-test coverage; the real-kind takeover begins only
+after the `AgentRun`, Job, and Pod binding exists.
 
-### Released v0.4 history
-
-The final v0.4 release commit is
-`pre-rewrite-commit-retired`, with recorded public real-kind run
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-recorded tag CI
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-and GitHub Release record `pre-rewrite-release-retired`. These v0.4 facts do not validate the
-candidate.
-
-The code-bearing commit
-`pre-rewrite-commit-retired` completed the public
-[AgentRun real kind E2E run](https://github.com/tiramitree/benchhandoff/actions)
-on 2026-07-29. The pinned gate used:
-
-- Go 1.26.5;
-- kind v0.32.0;
-- Kubernetes node and kubectl v1.36.1;
-- Kubernetes Go modules v0.36.0;
-- a digest-pinned Python runner base; and
-- a local digest-resolving OCI registry.
-
-The workflow passed Go formatting, module verification, `go vet`, and
-`go test -race ./...`, then exercised:
-
-- a deliberate version 3 task failure;
-- publication of the exact resume decision;
-- exact approval, bound resume, and fresh verify;
-- manager restart and live Job adoption;
-- a declared suite-digest mismatch rejected as `evidence_invalid`;
-- wrong approval rejected by admission;
-- a duplicate matching Pod rejected as `AmbiguousPodSet`; and
-- non-root, read-only-root runner execution.
-
-The gate finished with its bounded registry, cluster, and scratch cleanup
-checks passing. This is maintainer-operated synthetic evidence from one
-single-node kind environment. It is not production use, independent
-reproduction, performance evidence, external adoption, or a Kubernetes
-compatibility matrix.
-
-The Python and distribution gates for commit
-`pre-rewrite-commit-retired` completed all ten jobs in public
-[CI run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-Each Ubuntu 24.04 and Windows Server 2025 job across CPython 3.11 through 3.14
-ran 226 tests without failures, errors, or skips. The dependent jobs verified
-the canonical synthetic evidence and build-once exact distribution. Those
-results do not expand the kind validation to another cluster or workload.
+CI supplies a new `E2E_EVIDENCE_DIR` outside the script scratch root so the
+validated files can survive scratch cleanup for upload. A local run that omits
+that variable writes under `$SCRATCH_ROOT/evidence`; successful cleanup
+removes that default. Retaining local evidence requires a new, non-existing
+path under the temporary root.
 
 ## Reproducing the registered gate
 
@@ -303,7 +258,7 @@ The complete disposable gate is:
 bash controller/test/e2e/run_kind.sh
 ```
 
-For the candidate workflow, CI supplies a new temporary
+For the v0.5 workflow, CI supplies a new temporary
 `E2E_EVIDENCE_DIR`. A manual run may omit it and let the script choose a new
 directory below its bounded temporary root. The script refuses an existing
 evidence path and refuses a path outside that temporary root. Do not publish

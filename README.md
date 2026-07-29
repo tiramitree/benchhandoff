@@ -3,9 +3,9 @@
 [![CI](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
 [![AgentRun real kind E2E](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml/badge.svg?branch=main)](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml)
 
-> **Unreleased:** this source tree is a v0.5.0 candidate. The badges report the
-> latest public `main` results and do not validate this candidate. The current
-> completed release remains v0.4.0.
+> **Release scope:** v0.5.0 remains a GitHub-only early version line. It is not
+> published to a package registry and does not establish production support,
+> compatibility, independent review, or adoption.
 
 BenchHandoff is a narrow evidence engine for resuming a flat, sequential batch
 of expensive commands. The Python CLI runs locally. Version 0.4 also includes
@@ -46,9 +46,9 @@ BenchHandoff is not an experiment tracker, DAG workflow engine, distributed
 scheduler, sandbox, cryptographic attestation service, or guarantee of full
 reproducibility.
 
-## What the unreleased v0.5 candidate adds
+## What v0.5 adds
 
-The candidate changes the reference manager deployment from one replica to a
+Version 0.5 changes the reference manager deployment from one replica to a
 fixed pair. Both managers use client-go leader election over the namespaced
 `coordination.k8s.io/v1` Lease
 `benchhandoff-system/agentrun-controller.benchhandoff.dev`. The fixed timing is
@@ -60,7 +60,7 @@ The exact Lease is precreated. Its namespaced Role is restricted by
 not allow Lease create, list, watch, patch, delete, access to another Lease in
 the namespace, or cross-namespace Lease reads.
 
-The candidate also narrows two controller ambiguity windows:
+Version 0.5 also narrows two controller ambiguity windows:
 
 - after a Job create attempt, including `AlreadyExists`, the reconciler uses
   uncached API reads to require one deterministic action Job, one matching
@@ -71,7 +71,7 @@ The candidate also narrows two controller ambiguity windows:
   fresh reconcile. A later pass adopts only the same validated Job UID; a
   different bound UID blocks the run.
 
-The registered candidate gate requires a clean exact source commit and one
+The registered v0.5 gate requires a clean exact source commit and one
 disposable single-node kind cluster with two running Ready manager Pods. For
 each paused synthetic `start` and `resume` runner, it binds one stable Lease
 resource version to both manager names and UIDs, cordons the node, and deletes
@@ -247,250 +247,40 @@ source needs no install.
 
 ## Validation status
 
-### Unreleased v0.5 candidate
+This source tree does not carry forward validation identifiers from
+superseded history. Checked-in tests and workflows define reproducible
+procedures; no current-tip public CI or release evidence is claimed until an
+exact-commit run completes.
 
-The current local Windows candidate checkpoint reported:
+The ordinary
+[CI workflow](https://github.com/tiramitree/benchhandoff/actions/workflows/ci.yml)
+defines the operating-system/Python matrix, synthetic evidence regeneration,
+privacy and license gates, and exact-distribution smoke. The
+[real-kind workflow](https://github.com/tiramitree/benchhandoff/actions/workflows/agentrun-kind.yml)
+defines the bounded two-manager takeover fixture. A workflow file or an
+unrelated successful run is not evidence for this source revision.
 
-- public-privacy verification: PASS;
-- Python tests: 229 passed, 4 Windows capability skips, 0 failures, and
-  0 errors; and
-- Go formatting, module-tidiness verification, module verification, `go vet`,
-  and unit tests: PASS. A local trimpath manager build also passed with
-  `-buildvcs=false`, which was required only because this checkout is nested
-  inside a separate local repository boundary.
+The registered kind fixture checks a deliberate version 3 failure, exact
+approval, resume, fresh verification, manager takeover, stable live Job/Pod
+identity, and bounded cleanup in one disposable single-node environment.
+These are maintainer-operated synthetic checks. They do not establish
+independent reproduction, production reliability, strict fencing,
+exactly-once behavior, general Kubernetes compatibility, external use, or
+adoption.
 
-The Go race test is unavailable in the current local Windows environment. The
-No immutable v0.5.0 candidate commit has yet passed both the real kind takeover
-gate and ordinary public CI matrix. These
-mutable local results are neither a release record nor public evidence, and no
-candidate takeover artifact is claimed.
+## GitHub releases
 
-### Released v0.4 history
+Versions 0.1 through 0.4 are GitHub-only early releases. The authoritative
+current tag and asset state is shown on the
+[Releases page](https://github.com/tiramitree/benchhandoff/releases).
+This document intentionally omits superseded commit, run, artifact, asset,
+size, and digest identifiers; they do not validate a rewritten tag.
 
-The AgentRun code-bearing commit
-`pre-rewrite-commit-retired` completed the public pinned
-single-node
-[kind run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-on 2026-07-29. It passed Go formatting, module verification, vet, and race
-tests, then completed the deliberate version 3 failure -> exact approval ->
-resume -> fresh verify lifecycle. The same gate restarted the manager and
-adopted the exact live Job, classified a declared suite-digest mismatch as
-`evidence_invalid`, rejected a wrong approval at admission, blocked a duplicate
-matching Pod, ran the runner non-root with a read-only root, and passed its
-bounded registry/cluster/scratch cleanup checks.
-
-Commit `pre-rewrite-commit-retired` completed all ten jobs in
-public
-[CI run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-Each of the eight Ubuntu 24.04 and Windows Server 2025 jobs across CPython 3.11
-through 3.14 ran 226 tests without failures, errors, or skips. The dependent
-jobs generated and re-verified the canonical synthetic package and built,
-privacy-checked, installed, and smoked the exact wheel and sdist.
-
-The preceding run on `pre-rewrite-commit-retired...` exposed a pre-existing Windows test-helper
-race: the parent could observe a newly created marker before the child finished
-writing its JSON. `pre-rewrite-commit-retired...` changed that test helper to publish the complete
-marker by same-directory atomic replacement; ten repeated local Windows
-process-family runs and the complete public matrix then passed.
-
-These are maintainer-operated synthetic results from one kind environment and
-one operating-system/Python matrix. They are not external use, independent
-reproduction, production reliability, real-workload performance, or a general
-Kubernetes compatibility claim.
-
-The v0.3.0 code-bearing commit
-`pre-rewrite-commit-retired` completed all ten jobs in public
-main-branch
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-on 2026-07-28 (UTC+00:00). Each of the eight Ubuntu 24.04 and Windows Server
-2025 jobs across CPython 3.11 through 3.14 ran 211 tests with no failures,
-errors, or skips. The dependent evidence job generated and re-verified the
-canonical synthetic package. The package job built one wheel and one sdist,
-passed the public-privacy, strict Twine, and embedded-license checks, installed
-the exact wheel outside the checkout, and completed the version 1 recovery,
-version 2 context-bound, and version 3 closed-world workspace smokes. The
-feature-branch
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-also completed all ten jobs on the same code-bearing commit.
-
-These are maintainer-operated synthetic CI results, not external use,
-independent reproduction, production reliability, hostile-writer protection,
-or real-workload performance evidence. A tag or GitHub Release is a
-distribution event and does not change that boundary.
-
-For historical reference, the v0.2.0 release commit
-`pre-rewrite-commit-retired` completed all ten jobs in public
-main-branch
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-on 2026-07-28 (UTC+00:00). Each of the eight Ubuntu 24.04 and Windows Server
-2025 jobs across CPython 3.11 through 3.14 ran 186 tests with no failures,
-errors, or skips. The dependent evidence job generated and re-verified the
-canonical five-file synthetic package. The package job built one wheel and one
-sdist, passed the public-privacy, strict Twine, and embedded-license checks,
-installed the exact wheel outside the checkout, and completed both the
-version 1 recovery smoke and the version 2 context-bound launch smoke. These are
-maintainer-operated synthetic CI results, not external use, independent
-reproduction, production reliability, or real-workload performance evidence.
-The immediately preceding code-bearing commit
-`pre-rewrite-commit-retired` had already completed the same ten
-public jobs in
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-
-The version 2 branch did not pass on its first public attempt. In
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-all four Windows jobs passed while all four Ubuntu jobs exposed that a
-grandchild test helper incorrectly relied on CPython reconstructing
-`sys.executable` from the intentionally portable `argv[0]` in the version 2
-no-`PATH` environment. The repair used Linux `/proc/self/exe` only in that test
-helper and also made zombie and unreadable process-state handling fail closed.
-The complete feature-branch
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-and code-bearing main-branch run pre-rewrite-run-retired then passed without relaxing the
-launch environment; the release-commit run above repeated all gates.
-
-For the historical version 1 implementation, the first complete green public
-[CI run](https://github.com/tiramitree/benchhandoff/actions)
-finished on 2026-07-26 (UTC+00:00) at exact source
-`pre-rewrite-commit-retired`. All eight Ubuntu 24.04 and
-Windows Server 2025 jobs across CPython 3.11 through 3.14 ran all 158 tests
-with no failures, errors, or skips. The dependent evidence job generated and
-re-verified the five-file synthetic package. The package job built one sdist
-and one wheel, passed strict Twine and embedded-license checks, installed the
-exact wheel outside the checkout, and completed the deliberate failure ->
-resume -> verify smoke. The uploaded wheel is 50,705 bytes with SHA-256
-`4c0f51cf8af48a6bd9ddeec2814ed4abe513a4f0607c61d0cf71b22020296f3d`;
-the sdist is 84,290 bytes with SHA-256
-`77abe1423023c1971b2e69ec53c5b230d7c237ccd4103fb3975e7ca3aed1d003`.
-
-Publication did not pass on the first attempt. Public
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-exercised a symlink path that the local Windows account could not create and
-exposed an exception-boundary mismatch in all eight matrix jobs. Commit
-`pre-rewrite-commit-retired` normalized the failure and added a
-platform-independent regression. Public
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-then passed the complete matrix and evidence job, but the package job exposed a
-`pipefail`/early-reader archive-listing error. Commit
-`pre-rewrite-commit-retired` retained the archive checks while
-materializing each listing before matching it. These are maintainer-operated
-CI results, not independent reproduction, production reliability, or adoption.
-
-## GitHub release
-
-[v0.4.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.4.0) is the
-current completed GitHub-only early-alpha release. Its release commit is
-`pre-rewrite-commit-retired`; its recorded public real-kind run
-is
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-its recorded tag CI is
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-and its GitHub Release record is `pre-rewrite-release-retired`. Those immutable v0.4 facts do not
-validate the unreleased v0.5 candidate.
-
-The version 0.4 release scope does not include a controller image. The Go
-manager, CRD, reference Kustomize manifests, and kind gate are source-only.
-Neither the Python distribution nor the GitHub Release establishes Kubernetes
-production support, external use, independent reproduction, or adoption.
-
-[v0.3.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.3.0) is the
-previous completed GitHub-only early-alpha release recorded by this source
-under Apache-2.0. Its annotated tag peels to release commit
-`pre-rewrite-commit-retired`, and
-public tag
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-completed all ten jobs. The three attached assets are the CI-built wheel,
-sdist, and `SHA256SUMS`. The wheel is 78,077 bytes with SHA-256
-`6b4a1e097486beb928d23b26db918b2f1f897f5b0bda9d81bc1e2bf6045732f0`;
-the sdist is 139,395 bytes with SHA-256
-`e744c5f58eb289e0f409d6e734f1e719d58e73cf9bc710fd46bb904d5da04167`.
-
-The earlier
-[v0.2.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.2.0) is a
-GitHub-only early-alpha release under Apache-2.0. Its annotated tag peels to
-release commit `pre-rewrite-commit-retired`. The eight attached
-assets are the exact CI-built wheel, sdist, `SHA256SUMS`, and five verified
-synthetic-evidence files. The wheel is 64,163 bytes with SHA-256
-`d5fc39ec721bb5419fcda83653f40e7860c9565cd0fca8d6cc9078bb71229045`;
-the sdist is 109,078 bytes with SHA-256
-`ceeda39d7e20b5d4985960c3664696a51bd501a7143a15c8d69a61b337a3c9ca`.
-All eight Release downloads were compared byte-for-byte with the CI artifacts,
-and the downloaded wheel repeated the version 1 and version 2 installed-package
-smoke checks.
-
-The still-earlier
-[v0.1.0](https://github.com/tiramitree/benchhandoff/releases/tag/v0.1.0) remains
-available. No TestPyPI or PyPI package has been published. No GitHub release,
-including v0.3.0, creates a supported production line, independent
-reproduction, or external-adoption evidence.
-
-On 2026-07-25, the local Windows preflight exercised CPython 3.11.15, 3.12.13,
-3.13.14, and 3.14.6. Each runtime completed the 122-test suite with 119 passes
-and the same 3 symlink-creation permission skips, with no failures or errors.
-One pre-license wheel was then installed under all four runtimes; metadata and
-CLI help passed, and each installation completed the deliberate fail -> bound
-resume -> verify recovery path. At that historical checkpoint, the checked-in
-Ubuntu 24.04 and Windows Server 2025 matrix was still only a proposal. The
-canonical external-evidence validator passed with all four public counts at
-zero. This preflight was not a final licensed distribution, Linux result,
-production result, independent reproduction, or adoption evidence. The exact
-validated source is recorded in
-[VALIDATION_20260724.md](VALIDATION_20260724.md).
-
-The later cooperative writer-lock extension at clean source `d7b2cf6...` was
-also exercised under CPython 3.11.15, 3.12.13, 3.13.14, and 3.14.6. Each
-runtime compiled 38 Python files from source, validated the zero external-
-evidence ledger, and completed the current 129-test suite with 126 passes and
-the same 3 symlink-permission skips, with no failures or errors. This is four
-complete runs of one suite, not one 516-test suite. The commit-bound record is
-under
-`benchmarks/results/windows_py311_314_writer_lock_matrix_commit_d7b2cf6_20260725/`.
-It does not change the absence of Linux, public online CI, release,
-independent-validation, production, or adoption evidence.
-
-At clean source `8d789e9...`, the local CPython 3.12.10 orphan-lock diagnostic
-then used two processes and a real hard exit. Two read-only recovery decisions
-were identical; bound lock recovery changed zero run-evidence files, changed no
-partial output, and left the attempt count at 1. A separate bound run resume
-completed and verified attempt 2 while preserving the original lock tombstone.
-The 2239-byte three-file record is under
-`benchmarks/results/windows_py312_writer_recovery_commit_8d789e9_20260725/`.
-It is local synthetic Windows control-plane evidence, not Linux validation,
-safe-child-retry proof, public CI, production reliability, independent
-reproduction, distributed coordination, hostile-writer protection, or
-external adoption.
-
-At clean source `9bc9233...`, the complete orphan-recovery source, test, and
-diagnostic matrix then passed under CPython 3.11.15, 3.12.13, 3.13.14, and
-3.14.6. Each runtime compiled 42 Python files, validated the zero external-
-evidence ledger, and completed the 145-test suite with 142 passes, the same 3
-Windows symlink-permission skips, and no failures or errors. Each runtime also
-completed the direct two-process hard-exit recovery diagnostic with two
-identical inspections, zero changed run-evidence files, attempt 1 preserved
-during lock recovery, attempt 2 verified only after a separate bound resume,
-and the tombstone preserved. This is four complete suite runs and four
-diagnostic runs, not one 580-test suite. The 5709-byte three-file record is
-under
-`benchmarks/results/windows_py311_314_writer_recovery_matrix_commit_9bc9233_20260725/`.
-It remains local synthetic Windows control-plane evidence, not Linux or public
-CI validation, a licensed release, safe-child-retry proof, production
-reliability, independent reproduction, distributed coordination, hostile-
-writer protection, third-party review, or external adoption.
-
-At clean source `6d2f5ec...`, two isolated CPython 3.12.10 clones then tested
-the owner-allowed Apache-2.0 and MIT transitions without changing this
-repository's pending state. Each final state completed the 157-test suite with
-154 passes, the same 3 Windows symlink-permission skips, and no failures or
-errors. Both sdist/wheel pairs passed strict Twine checks and PEP 639 metadata
-inspection; both installed wheels completed CLI help and the deliberate
-failure -> resume -> verify path. Cross-variant archive inspection found only
-the expected license, license-metadata, and derived RECORD/PKG-INFO content
-differences. All 6,810 temporary files and 74,432,653 bytes were deleted after
-hashing. The three-file diagnostic record is under
-`benchmarks/results/windows_py312_dual_license_release_preflight_commit_6d2f5ec_20260725/`.
-This is not an owner license choice, license grant, publication, public CI,
-Linux result, PyPI result, independent reproduction, production evidence, or
-external adoption. The final owner-selected commit must repeat the release
-gates.
+Version 0.5 remains a candidate until its exact final commit and annotated tag
+complete the registered gates. Its intended scope is GitHub-only. The Go
+manager, CRD, reference Kustomize manifests, and kind gate remain source-only;
+no controller image, Helm chart, package-registry publication, production
+support, independent reproduction, external use, or adoption is asserted.
 
 ## Five-minute quickstart
 
@@ -804,14 +594,12 @@ The public CI separates an eight-job operating-system/Python test matrix, a
 single canonical synthetic-evidence job, and a package job that builds once,
 checks both distributions, installs the exact wheel outside the checkout, runs
 the failure-to-resume example, and uploads only those tested bytes. It is
-license-gated. The first complete green execution is
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions);
-its uploaded artifact archives are retained by GitHub for 14 days. The
-commit-bound record inside the evidence artifact reports 18 versus 13
-synthetic child calls, 5 versus 0 duplicate successful calls, and identical
-final output bytes for restart-from-zero versus evidence-verified resume. Those
-are deterministic synthetic work counts, not elapsed-time speed or a
-real-workload performance result.
+license-gated. The reproducible fixture records 18 versus 13 synthetic child
+calls, 5 versus 0 duplicate successful calls, and identical final output bytes
+for restart-from-zero versus evidence-verified resume. Those are deterministic
+synthetic work counts, not elapsed-time speed or a real-workload performance
+result. Validate them against the exact checked-out revision; do not transfer
+them from another run or tag.
 
 Structured issue forms can record reproducible bugs and
 bounded independent reproduction attempts, independent use, institutional

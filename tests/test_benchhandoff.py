@@ -87,6 +87,30 @@ class BenchHandoffTests(unittest.TestCase):
     def temporary_root(self) -> WorkspaceTemporaryDirectory:
         return WorkspaceTemporaryDirectory(prefix="benchhandoff-test-")
 
+    def test_plan_records_only_generic_platform_family(self) -> None:
+        with self.temporary_root() as temporary:
+            root = Path(temporary)
+            suite = write_suite(root / "suite", SUCCESS_WORKER)
+            run = root / "run"
+            with (
+                mock.patch.object(
+                    engine.platform,
+                    "system",
+                    return_value="TestOS",
+                ),
+                mock.patch.object(
+                    engine.platform,
+                    "platform",
+                    side_effect=AssertionError(
+                        "exact host build must not be read"
+                    ),
+                ),
+            ):
+                self.assertEqual(start_run(suite, run).status, "completed")
+
+            plan = read_json_file(run / "plan.json", label="plan")
+            self.assertEqual(plan["environment"]["platform"], "TestOS")
+
     def test_suite_resource_caps_block_before_run_creation(self) -> None:
         with self.temporary_root() as temporary:
             root = Path(temporary)

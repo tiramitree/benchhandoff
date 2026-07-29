@@ -20,7 +20,7 @@ Use a clean checkout of an exact commit and record:
 git rev-parse HEAD
 git status --short
 python --version
-python -c "import platform,sys; print(platform.system() or "Unknown"); print(sys.implementation.name)"
+python -c "import platform,sys; print(platform.system()); print(sys.implementation.name)"
 ```
 
 Record whether Python came from a virtual environment, the operating system,
@@ -49,17 +49,12 @@ termination and residual-group refusal after a hard runner exit. A green result
 supports only those synthetic operating-system boundaries; it is not a sandbox,
 production reliability rate, or external reproduction.
 
-## Validate the unreleased v0.5 controller candidate
+## Validate the v0.5 controller
 
-The current local Windows checkpoint reports public-privacy PASS, 229 Python
-passes with 4 Windows capability skips and no failures or errors, plus PASS for
-Go formatting, module-tidiness verification, module verification, `go vet`,
-and unit tests. A trimpath manager build passed locally with
-`-buildvcs=false`; this exception was needed because the worktree is nested
-inside a separate local repository boundary. A clean standalone checkout
-should use the ordinary build command below. The local Windows environment
-cannot run the Go race test. The v0.5 real-kind gate and public CI have not yet
-run, so no candidate takeover artifact or public validation is claimed.
+This document does not claim that the current tip has passed public CI. Check
+the ordinary and real-kind workflow pages for runs whose source revision
+exactly matches the commit or tag being evaluated. Do not transfer a result,
+artifact digest, or test count from another revision.
 
 Run the Go source checks from a supported environment:
 
@@ -83,7 +78,7 @@ bash controller/test/e2e/run_kind.sh
 
 It requires Linux, Bash, Docker, outbound access to pinned public images and
 downloads, and enough resources for one disposable kind node, one registry,
-and two manager Pods. The candidate gate deletes the observed Lease-holder
+and two manager Pods. The v0.5 gate deletes the observed Lease-holder
 manager while synthetic `start` and `resume` Jobs are separately paused. It
 requires a clean source tree at the beginning and end, binds a stable Lease
 version to both manager Pod UIDs, cordons the node, and uses a Pod-UID

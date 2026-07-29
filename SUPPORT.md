@@ -4,8 +4,8 @@ BenchHandoff has GitHub-only early releases and no package-registry release,
 support SLA, guaranteed response time, Kubernetes compatibility promise, or
 production-support commitment.
 
-Version 0.5.0 is currently an unreleased source candidate. Its two-manager
-Lease and takeover code does not create a supported HA product or compatibility
+Version 0.5.0 is a GitHub-only early version line. Its two-manager Lease and
+takeover code does not create a supported HA product or compatibility
 commitment.
 
 Use the repository's structured issue forms for reproducible bugs, independent

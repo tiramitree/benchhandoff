@@ -1,15 +1,15 @@
 # Limitations
 
-BenchHandoff v0.5.0 is currently an unreleased candidate. BenchHandoff remains
-a narrow run-evidence engine, not a security sandbox, hostile-writer boundary,
-or distributed workflow engine. The current completed release is v0.4.0.
+BenchHandoff v0.5.0 remains a narrow run-evidence engine, not a security
+sandbox, hostile-writer boundary, or distributed workflow engine. Its version
+lines are GitHub-only early releases, not supported production lines.
 
 ## Implemented execution targets
 
-- Child execution targets Windows and Linux only. Version 2 code-bearing commit
-  `pre-rewrite-commit-retired` completed the public Ubuntu 24.04
-  and Windows Server 2025 matrix across CPython 3.11 through 3.14 in
-  [run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
+- Child execution targets Windows and Linux only. The checked-in CI workflow
+  defines an Ubuntu and Windows matrix across the declared CPython versions;
+  only the status of a run on the exact revision being evaluated can support a
+  validation claim.
 - Linux requires readable `/proc` process identities and group membership.
   macOS and other operating systems do not have a supported start-token
   implementation. A new start rejects them before creating the run directory;
@@ -113,20 +113,19 @@ in scope.
 
 ## AgentRun controller boundary
 
-- The released v0.4 controller is an optional early-alpha reference control
-  plane. Its observed integration target is one manager and one node in kind
-  v0.32.0 with Kubernetes v1.36.1. The unreleased v0.5 candidate changes the
-  reference deployment to exactly two managers using one namespaced Lease, but
-  no immutable v0.5 commit has yet passed both its ordinary public-CI matrix
-  and real-kind gate. Other Kubernetes releases,
+- The controller is an optional early-alpha reference control plane. The v0.4
+  observed integration target was one manager and one node. Version 0.5 changes
+  the reference deployment to exactly two managers using one namespaced Lease.
+  The checked-in gate targets one fixed disposable single-node kind
+  environment. Other Kubernetes releases,
   storage classes, container runtimes, architectures, admission stacks, and
   network policies have not been validated.
-- The candidate Lease settings are fixed at a 15-second duration, 10-second
+- The v0.5 Lease settings are fixed at a 15-second duration, 10-second
   renew deadline, and 2-second retry period with
   `LeaderElectionReleaseOnCancel=false`. These are coordination parameters, not
   fencing tokens or a proof that an old leader cannot act during a partition.
   The registered gate assumes the API server and its storage remain available.
-- The candidate precreates the exact leader-election Lease. Its Role is
+- Version 0.5 precreates the exact leader-election Lease. Its Role is
   namespaced to `benchhandoff-system`, restricted by `resourceNames`, and
   permits only `get` and `update` on that object. It cannot create or recreate
   the Lease, list or watch Leases, patch or delete it, update another Lease in
@@ -154,12 +153,12 @@ in scope.
   guarantees of the Kubernetes API and storage. An API error is retried or
   blocks progress; it is not treated as reliable absence.
 - Deterministic Job names and live UID bindings allow released v0.4 to adopt an
-  exact Job after one tested manager restart. The v0.5 candidate additionally
+  exact Job after one tested manager restart. Version 0.5 additionally
   observes the deterministic name and complete action-labelled Job set through
   uncached reads after create or `AlreadyExists`, then accepts only one matching
   server UID and complete audited template. Unknown create errors requeue; they
   are not evidence of absence and do not authorize a second Job name.
-- A candidate status-update conflict discards the stale object and schedules a
+- A v0.5 status-update conflict discards the stale object and schedules a
   fresh reconcile. The controller does not blindly retry a stale status patch.
   A different Job UID from the one already bound in status blocks the run.
 - The create/`AlreadyExists`, committed-response-loss, and status-conflict
@@ -173,8 +172,8 @@ in scope.
   UID-precondition deletes the holder, and accepts only the pre-existing
   non-holder Pod acquiring exactly the next transition. It then uncordons the
   node and requires the measured Job/Pod identities and counts to remain one.
-  Until that real-kind gate and public CI pass on an immutable commit, these
-  are implemented test conditions, not observed takeover evidence.
+  A successful exact-revision execution supports only that one
+  maintainer-operated synthetic case, not independent or production evidence.
 - Even after those fixed gates pass, they do not establish strict fencing,
   availability during network partitions, arbitrary Pod recovery, multi-node
   or multi-cluster availability, exactly-once execution, or production high
@@ -194,11 +193,10 @@ in scope.
 - The checked-in Kustomize manager image is an E2E placeholder. There is no
   published controller image, Helm chart, upgrade/migration mechanism,
   production configuration, compatibility matrix, or support commitment.
-- The public v0.4 kind test uses synthetic local fixtures and one disposable
-  registry. The candidate v0.5 gate would additionally produce one bounded
-  privacy-gated takeover record and checksum, but no immutable v0.5 commit has
-  yet passed both the ordinary public-CI matrix and this real-kind gate. Neither
-  gate measures throughput, latency, scale, noisy-neighbor behavior,
+- The public v0.4 and v0.5 kind tests use synthetic fixtures and one disposable
+  registry. The v0.5 run produced one bounded privacy-gated takeover record and
+  checksum, with exact relationships checked again after download. Neither gate
+  measures throughput, latency, scale, noisy-neighbor behavior,
   long-duration stability, production recovery, or real model/agent quality.
 
 ## Recovery and atomicity
@@ -299,34 +297,14 @@ in scope.
 
 ## Claim boundary
 
-The current unreleased v0.5 local checkpoint reports public-privacy PASS,
-229 Python passes with 4 Windows capability skips and no failures or errors,
-and PASS for Go formatting, module-tidiness verification, module verification,
-`go vet`, and unit tests. A trimpath manager build passed locally with
-`-buildvcs=false`, required because this worktree is nested inside another
-local repository boundary. The Go race test is unavailable in the current
-local Windows environment. No immutable v0.5 commit has yet passed both the
-ordinary public-CI matrix and real-kind gate.
-These mutable local observations are not release or takeover evidence.
-
-Recorded v0.4 validation is maintainer-operated and synthetic. It includes the
-226-test Ubuntu/Windows matrix, evidence generation, and exact-distribution
-smoke in public
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-plus one pinned single-node Kubernetes lifecycle in
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions).
-The runs bind different exact commits; the later commit changes only the
-Windows process-family test marker, not the controller implementation.
-
-The final v0.4 release commit remains
-`pre-rewrite-commit-retired`, with recorded real-kind run
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-tag CI
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-and GitHub Release record `pre-rewrite-release-retired`. Those facts do not transfer to v0.5.
+This source tree does not carry forward validation identifiers from
+superseded history. Checked-in tests and workflows define reproducible
+procedures; a public pass is claimed only for the exact commit or tag shown by
+the corresponding workflow. Maintainer-operated synthetic checks are not
+independent reproduction, production reliability, external use, or adoption.
 
 No claim is made about production use, external users, independent
 reproduction, real-workload performance, a general Kubernetes compatibility
-range, or compatibility with a specific embodied-simulation stack. A GitHub
+range, or compatibility with an external application stack. A GitHub
 tag or Release is a distribution event; it does not establish any of those
 external claims.

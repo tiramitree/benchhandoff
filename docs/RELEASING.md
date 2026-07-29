@@ -10,21 +10,13 @@ public-CI-tested commit. Every release must repeat the same exact-commit
 gates. There is no TestPyPI or PyPI publication, supported production line, or
 external-adoption claim.
 
-The `v0.3.0` annotated tag peels to release commit
-`pre-rewrite-commit-retired`. Exact tag
-[run pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions)
-completed all ten jobs before the three CI-built distribution assets were
-attached. This is a historical release record, not a substitute for repeating
-the gates on a later candidate. Neither those gates nor a tag or Release
-establishes adoption, production compatibility, or performance.
-
-The current completed `v0.4.0` release commit is
-`pre-rewrite-commit-retired`. Its recorded real-kind run is
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-its recorded tag CI is
-[pre-rewrite-run-retired](https://github.com/tiramitree/benchhandoff/actions),
-and its GitHub Release record is `pre-rewrite-release-retired`. These historical facts do not
-substitute for any v0.5 candidate gate.
+Versions 0.1 through 0.4 are historical GitHub-only early releases. Their
+current annotated tags, workflow results, and Release asset sets must be
+evaluated directly; this source tree does not carry forward validation
+identifiers from superseded history. Version 0.5 remains a candidate until
+its exact final commit and tag complete every gate below. Neither a workflow
+result, tag, nor Release establishes adoption, production compatibility, or
+performance.
 
 ## 1. Resolve release blockers
 
@@ -102,15 +94,15 @@ For a version 0.4 or later `AgentRun` candidate, additionally stop unless:
   or remotely attested;
 - the release notes preserve the no-sandbox, at-least-once, single-node,
   no-general-compatibility, and no-production boundaries;
-- for a v0.5 candidate, the exact Lease is precreated and its
+- for v0.5, the exact Lease is precreated and its
   `resourceNames`-restricted Role permits only `get` and `update`;
-- for a v0.5 candidate, each registered gate starts and ends on the same clean
+- for v0.5, each registered gate starts and ends on the same clean
   commit, binds one stable Lease version to both manager Pod UIDs, cordons the
   node, UID-precondition deletes the holder, requires the pre-existing passive
   to acquire exactly the next transition, restores scheduling and two Ready
   replicas, and preserves measured one-object start/resume Job and Pod
   identities;
-- for a v0.5 candidate, the privacy-gated takeover JSON and its one-entry
+- for v0.5, the privacy-gated takeover JSON and its one-entry
   checksum are the only two regular artifact files, pass the repository privacy
   scanner, and are uploaded only by a successful trusted push or dispatch; the
   release notes explicitly deny strict fencing, network-partition safety,
@@ -193,7 +185,7 @@ For a GitHub-only release:
    dispatch that workflow against the exact tag ref and verify the same head
    SHA;
 4. download the distribution and evidence artifacts only from the successful
-   tag CI;
+   tag workflows;
 5. compare the downloaded files to the workflow's recorded SHA-256 values;
 6. create the GitHub Release for the already-pushed annotated tag;
 7. attach the same wheel, sdist, and `SHA256SUMS`; attach synthetic evidence
@@ -205,6 +197,14 @@ For a GitHub-only release:
 State all observed skips and limitations. Do not rebuild release assets after
 CI. If any release download differs, publish no replacement bytes under the
 same version.
+
+The v0.5 release scope includes the exact tag-kind `takeover-evidence.json` and
+its one-entry checksum. The distribution checksum retains the asset name
+`SHA256SUMS`; upload the unchanged takeover checksum bytes under the distinct
+asset name `agentrun-takeover-SHA256SUMS`. Renaming must not alter its contents,
+which continue to name `takeover-evidence.json`. Download both evidence assets
+again and verify that relationship before treating the release record as
+complete.
 
 ## 6. Optional package-registry gate
 
