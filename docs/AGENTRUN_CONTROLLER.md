@@ -5,7 +5,10 @@ version 3 evidence engine. It is an early-alpha reference controller for one
 bounded lifecycle:
 
 ```text
-start Job -> AwaitingApproval -> resume Job -> verify Job -> Succeeded
+start Job
+  | completed --------------------------> verify Job -> Succeeded
+  | failed + decision -> AwaitingApproval
+                           | exact approval -> resume Job -> verify Job -> Succeeded
 ```
 
 Any ambiguous identity, evidence, workload result, or approval transition moves
@@ -34,6 +37,11 @@ The manager does not read runner logs, suite bytes, run evidence, or other PVC
 contents. It accepts only the bounded termination protocol and separately
 checks the live Job and Pod identities that produced it.
 
+`AgentRun` objects are namespaced, but the checked-in reference manager uses a
+ClusterRole and ClusterRoleBinding to watch all namespaces. That reference
+scope is for the disposable gate, not a least-privilege production policy.
+Operators must review and narrow it for their own deployment boundary.
+
 ## API
 
 A minimal resource has this shape:
@@ -58,7 +66,8 @@ The suite must be a strict BenchHandoff version 3 suite below
 
 `spec.execution` is immutable. The controller hashes a versioned canonical JSON
 representation of all five execution fields and binds that digest into Job
-names, labels, annotations, argv, status, and the runner result.
+names, annotations, argv, status, and the runner result. Job labels separately
+bind the run UID and action.
 
 `runnerImage` must use `name@sha256:<digest>` form. A tag-only reference is
 rejected. The image digest binds image-manifest bytes; it does not prove image
@@ -177,7 +186,7 @@ The workflow passed Go formatting, module verification, `go vet`, and
 - publication of the exact resume decision;
 - exact approval, bound resume, and fresh verify;
 - manager restart and live Job adoption;
-- suite-byte drift rejected as `evidence_invalid`;
+- a declared suite-digest mismatch rejected as `evidence_invalid`;
 - wrong approval rejected by admission;
 - a duplicate matching Pod rejected as `AmbiguousPodSet`; and
 - non-root, read-only-root runner execution.

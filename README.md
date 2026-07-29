@@ -71,8 +71,9 @@ and moves the run to `Blocked` with reason `PreseededApproval`. The decision
 digest is review data, not a credential or authorization token.
 
 The public pinned single-node kind gate covers deliberate failure, exact
-approval, bound resume, fresh verify, manager restart/adoption, suite drift,
-wrong approval, duplicate Pod rejection, Go race tests, and bounded cleanup.
+approval, bound resume, fresh verify, manager restart/adoption, a declared
+suite-digest mismatch, wrong approval, duplicate Pod rejection, Go race tests,
+and bounded cleanup.
 It does not establish high availability, exactly-once side effects,
 multi-cluster coordination, production reliability, independent review, or
 external adoption.
@@ -202,7 +203,7 @@ single-node
 on 2026-07-29. It passed Go formatting, module verification, vet, and race
 tests, then completed the deliberate version 3 failure -> exact approval ->
 resume -> fresh verify lifecycle. The same gate restarted the manager and
-adopted the exact live Job, classified changed suite bytes as
+adopted the exact live Job, classified a declared suite-digest mismatch as
 `evidence_invalid`, rejected a wrong approval at admission, blocked a duplicate
 matching Pod, ran the runner non-root with a read-only root, and passed its
 bounded registry/cluster/scratch cleanup checks.

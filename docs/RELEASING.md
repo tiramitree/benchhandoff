@@ -108,10 +108,11 @@ For a version 0.4 `AgentRun` candidate, additionally stop unless:
 
 - Go formatting, `go mod tidy -diff`, module verification, `go vet`, and
   `go test -race ./...` pass on the exact candidate;
-- the pinned real-API kind workflow succeeds on that exact candidate, including
-  failure, approval, resume, fresh verify, manager restart/adoption, suite
-  drift, wrong approval, duplicate Pod rejection, runner security-context
-  checks, and bounded cleanup;
+- the ordinary CI and pinned real-API kind workflows both succeed on that same
+  exact candidate, with the kind gate covering failure, approval, resume, fresh
+  verify, manager restart/adoption, a declared suite-digest mismatch, wrong
+  approval, duplicate Pod rejection, runner security-context checks, and
+  bounded cleanup;
 - the release notes identify the exact kind, Kubernetes, kubectl, Go, and
   Kubernetes-module versions used by that one observed gate;
 - the release notes state that the decision digest is not a credential, that
@@ -155,9 +156,9 @@ commit binding; it does not authenticate where a downloaded package came from.
 Describe these as synthetic child-work results, not wall-clock or production
 performance.
 
-## 3. Build once
+## 3. Local package preflight
 
-Use an isolated builder from the exact candidate commit:
+A local isolated build may be used to catch packaging faults before publication:
 
 ```bash
 python -m build
@@ -165,15 +166,17 @@ python -m twine check --strict dist/*
 sha256sum dist/* > dist/SHA256SUMS
 ```
 
-Inspect the wheel and source archive. Confirm that they contain the selected
-license, required documentation, expected package files, and no secrets,
-credentials, caches, local paths, test outputs, or unrelated artifacts.
+Inspect these local wheel and source-archive bytes for the selected license,
+required documentation, expected package files, secrets, credentials, caches,
+local paths, test outputs, and unrelated artifacts.
 
-The files in `dist/` are the release candidates. Do not rebuild separately for
-TestPyPI, GitHub Releases, or PyPI. All later checks and uploads must use these
-same bytes, verified by SHA-256.
+Local build output is preflight material only and must never be uploaded. The
+`package` job in the public tag CI is the sole release builder. It builds once,
+runs the privacy and installed-wheel gates, records SHA-256, and uploads the
+exact release candidates. GitHub Release uploads must use only those downloaded
+CI bytes.
 
-## 4. Test the exact wheel outside the checkout
+## 4. Test the exact preflight wheel outside the checkout
 
 Create a fresh environment and working directory outside the repository.
 Install the exact wheel by path, check its metadata version, run CLI help, and
@@ -187,17 +190,23 @@ source-tree test is not a substitute for this installed-wheel test.
 
 For a GitHub-only release:
 
-1. require one complete green public CI run on the exact candidate commit;
-2. download the distribution and evidence artifacts from that run;
-3. compare the downloaded files to the workflow's recorded SHA-256 values;
-4. create the final tag on the exact candidate commit;
-5. create the GitHub Release for that tag;
-6. attach the same wheel, sdist, and `SHA256SUMS`; attach synthetic evidence
+1. require complete green public ordinary CI and, for version 0.4, AgentRun
+   real-kind E2E runs on the exact candidate commit;
+2. create and push an annotated final tag on that exact commit;
+3. require the tag ref to peel to the candidate and wait for complete green
+   ordinary CI and AgentRun real-kind E2E runs whose head SHA is the candidate;
+   if a path-filtered tag event does not create the AgentRun run, manually
+   dispatch that workflow against the exact tag ref and verify the same head
+   SHA;
+4. download the distribution and evidence artifacts only from the successful
+   tag CI;
+5. compare the downloaded files to the workflow's recorded SHA-256 values;
+6. create the GitHub Release for the already-pushed annotated tag;
+7. attach the same wheel, sdist, and `SHA256SUMS`; attach synthetic evidence
    only when the release scope explicitly calls for those exact privacy-gated
    CI bytes, and never attach raw run directories or logs; and
-7. download every attached release asset again and verify exact names, sizes,
-   hashes,
-   metadata, and the installed-wheel smoke path.
+8. download every attached release asset again and verify exact names, sizes,
+   hashes, metadata, and the installed-wheel smoke path.
 
 State all observed skips and limitations. Do not rebuild release assets after
 CI. If any release download differs, publish no replacement bytes under the

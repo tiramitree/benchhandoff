@@ -31,10 +31,15 @@ digest is a content binding, not a credential, signature, human identity, or
 authorization decision. Use Kubernetes RBAC and admission policy to control
 who may create or update `AgentRun` objects.
 
-The checked-in manager role can read `AgentRun` objects, update their status,
-create and observe Jobs, and observe Pods. It has no Secret permissions. The
-manager needs its Kubernetes service-account token for those API operations;
-generated runner Jobs disable token mounting. Runner settings such as non-root
+The checked-in reference/E2E manifest uses a ClusterRole and
+ClusterRoleBinding. It can read `AgentRun` objects and update their status,
+create and observe Jobs, and observe Pods across all namespaces. It has no
+Secret permissions. A real deployment must review that cluster-wide scope and
+replace or narrow it to the intended namespaces and operations.
+
+The manager needs its Kubernetes service-account token for those API
+operations; generated runner Jobs disable token mounting. Runner settings such
+as non-root
 execution, a read-only root filesystem, dropped capabilities, and
 runtime-default seccomp narrow the generated Pod template, but they do not
 restrict PVC writes, network access, workload side effects, or a hostile image.

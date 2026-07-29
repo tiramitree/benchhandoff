@@ -34,8 +34,9 @@ performance, or external-adoption evidence.
   account token and service links, dropped capabilities, runtime-default
   seccomp, and no privilege escalation.
 - Pinned, disposable kind E2E coverage for deliberate failure, exact approval,
-  bound resume, fresh verify, manager restart/adoption, suite drift, wrong
-  approval, duplicate Pod rejection, race tests, and bounded cleanup.
+  bound resume, fresh verify, manager restart/adoption, a declared suite-digest
+  mismatch, wrong approval, duplicate Pod rejection, race tests, and bounded
+  cleanup.
 
 ### Fail-closed boundaries
 

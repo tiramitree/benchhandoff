@@ -60,18 +60,16 @@ Version 0.4 adds an optional Kubernetes `AgentRun` control plane around the
 same strict version 3 engine:
 
 ```text
-AgentRun + immutable execution spec
-              |
-              v
- deterministic start Job
-              |
-       failed + decision
-              v
-       AwaitingApproval
-              |
-       exact write-once digest
-              v
- resume Job -> verify Job -> Succeeded
+AgentRun + immutable execution spec -> deterministic start Job
+                                      | completed
+                                      +-------------> verify Job -> Succeeded
+                                      |
+                                      | failed + decision
+                                      v
+                              AwaitingApproval
+                                      | exact write-once digest
+                                      v
+                                  resume Job -> verify Job -> Succeeded
 ```
 
 The Go manager binds each Job to the `AgentRun` UID, a canonical execution-spec
