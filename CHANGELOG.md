@@ -3,11 +3,13 @@
 All notable versioned changes are documented in this file. A GitHub Release is
 not a PyPI publication, supported-production claim, or external-adoption event.
 
-## 0.5.0 - Unreleased
+## 0.5.0 - 2026-07-30
 
-Version 0.5.0 is a GitHub-only early release candidate. The controller remains
-source-only; no v0.5.0 Release, controller image, package-registry publication,
-production support, independent review, external use, or adoption is asserted.
+Version 0.5.0 is a GitHub-only early release only when its matching annotated
+tag and GitHub Release exist. A source commit or changelog entry alone is not a
+release. The controller remains source-only; no controller image,
+package-registry publication, production support, independent review, external
+use, or adoption is asserted.
 
 ### Added
 

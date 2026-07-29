@@ -1,9 +1,9 @@
 # Limitations
 
-The BenchHandoff v0.5.0 source candidate remains a narrow run-evidence engine,
-not a security sandbox, hostile-writer boundary, or distributed workflow
-engine. Published versions through v0.4.0 are GitHub-only early releases, not
-supported production lines.
+BenchHandoff v0.5.0 remains a narrow run-evidence engine, not a security
+sandbox, hostile-writer boundary, or distributed workflow engine. A source
+commit alone is not a release. Any published version is a GitHub-only early
+release, not a supported production line.
 
 ## Implemented execution targets
 
