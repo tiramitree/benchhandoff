@@ -229,7 +229,8 @@ and unit tests. A trimpath manager build passed with `-buildvcs=false`, needed
 because this worktree is nested inside a separate local repository boundary.
 The local Windows environment cannot run the Go race test.
 
-The real kind takeover gate and public CI have not yet run for v0.5. No
+The real kind takeover gate and public CI have not yet passed on an immutable
+v0.5 commit. No
 candidate takeover artifact, release, independent review, external use, or
 adoption is claimed. When the registered kind gate succeeds, it is designed to
 write measured manager, Lease, Job, and Pod before/after fields into one

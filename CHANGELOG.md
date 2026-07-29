@@ -46,8 +46,13 @@ or adoption is asserted.
   `-buildvcs=false` because the worktree is nested inside a separate local
   repository boundary.
 - The Go race test is unavailable in the current local Windows environment.
-- The real kind takeover gate and public CI have not yet run for this
-  candidate. No v0.5 evidence artifact or release is claimed.
+- The first feature-branch real-kind workflow attempt failed before creating a
+  job because a workflow-level environment expression referenced the
+  runner-only temporary-directory context. The candidate now scopes that
+  expression to the runner steps. This was a workflow-definition failure, not
+  a takeover-test result.
+- The real kind takeover gate and public CI have not yet passed on an immutable
+  candidate commit. No v0.5 evidence artifact or release is claimed.
 
 The candidate is a fixed active/passive takeover experiment with one kind node
 and continuously available API-server storage. It does not establish strict

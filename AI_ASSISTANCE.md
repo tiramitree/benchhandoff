@@ -21,7 +21,8 @@ Windows capability skips; and Go formatting, module-tidiness verification,
 module verification, `go vet`, and unit tests passed. A local trimpath manager
 build passed with `-buildvcs=false`, required by this nested worktree's separate
 repository boundary. The local Windows environment cannot run the Go race
-test. The v0.5 real-kind gate and public CI have not yet run, and no v0.5
+test. The v0.5 real-kind gate and public CI have not yet passed on an immutable
+candidate commit, and no v0.5
 release or takeover artifact is claimed.
 
 No production deployment, independent user, upstream acceptance, performance

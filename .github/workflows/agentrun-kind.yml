@@ -26,7 +26,6 @@ concurrency:
 
 env:
   GOTOOLCHAIN: local
-  E2E_EVIDENCE_DIR: ${{ runner.temp }}/benchhandoff-agentrun-evidence-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   real-kind:
@@ -47,6 +46,8 @@ jobs:
 
       - name: Run the pinned real kind gate
         shell: bash
+        env:
+          E2E_EVIDENCE_DIR: ${{ runner.temp }}/benchhandoff-agentrun-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: bash controller/test/e2e/run_kind.sh
 
       - name: Upload the privacy-gated takeover evidence
@@ -57,8 +58,8 @@ jobs:
         with:
           name: agentrun-takeover-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ env.E2E_EVIDENCE_DIR }}/takeover-evidence.json
-            ${{ env.E2E_EVIDENCE_DIR }}/SHA256SUMS
+            ${{ runner.temp }}/benchhandoff-agentrun-evidence-${{ github.run_id }}-${{ github.run_attempt }}/takeover-evidence.json
+            ${{ runner.temp }}/benchhandoff-agentrun-evidence-${{ github.run_id }}-${{ github.run_attempt }}/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
           compression-level: 9

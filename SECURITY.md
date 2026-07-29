@@ -59,7 +59,8 @@ termination message. Those records are not signed or remotely attested. A
 principal with sufficient cluster privileges can alter resources the controller
 trusts. Released v0.4 observed one manager in one single-node kind cluster. The
 v0.5 candidate configures two managers, but its real-kind and public-CI gates
-have not yet run. There is no strict-fencing, network-partition,
+have not yet passed on an immutable v0.5 commit. There is no strict-fencing,
+network-partition,
 production-high-availability, production-isolation, or general Kubernetes
 compatibility claim. See
 [the AgentRun controller boundary](docs/AGENTRUN_CONTROLLER.md).
