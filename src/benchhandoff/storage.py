@@ -377,15 +377,17 @@ def require_same_filesystem(
 
 
 def _fsync_directory(path: Path) -> None:
+    if os.name != "posix":
+        return
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
         descriptor = os.open(path, flags)
-    except OSError:
-        return
+    except OSError as exc:
+        raise EvidenceError("unable to open directory for durable publication") from exc
     try:
         os.fsync(descriptor)
-    except OSError:
-        pass
+    except OSError as exc:
+        raise EvidenceError("unable to flush directory for durable publication") from exc
     finally:
         os.close(descriptor)
 

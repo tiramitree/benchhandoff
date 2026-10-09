@@ -55,6 +55,13 @@ in scope.
 
 ## Filesystem model
 
+- On POSIX, an atomic replace or quarantine move reports a directory-open or
+  directory-flush error instead of treating it as durable success. The rename
+  may already have taken effect when flushing fails. Its resulting bytes are
+  retained; a later resume reloads and reconciles the pending event rather than
+  assuming that a raised error means no change occurred. This is tested with
+  injected I/O errors, not with physical power loss. Windows does not claim the
+  same POSIX directory-flush guarantee.
 - Content hashes and ordinary-file checks narrow accidental evidence drift but
   do not defend against a privileged concurrent attacker.
 - There are unavoidable check/open race windows around paths created by child
@@ -80,6 +87,10 @@ in scope.
   Version 3 additionally requires every observed workspace entry to report the
   workspace root's device id. A same-device bind mount may therefore evade this
   check and alias storage outside the apparent tree.
+- Failed attempt-log preparation closes opened handles but retains existing
+  path entries. An empty path can belong to a competing creator, so cleanup
+  must not infer ownership from its name or zero size. A retry still requires
+  ordinary empty logs and the existing run/writer checks.
 - The run root has an exact topology. An unexpected root entry, including a
   same-directory atomic-write `.tmp` left by a hard process kill, permanently
   blocks automatic resume and verify. BenchHandoff never deletes that evidence

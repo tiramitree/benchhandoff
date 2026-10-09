@@ -2550,17 +2550,12 @@ def _prepare_attempt_logs(
     stderr_exists = os.path.lexists(stderr_path)
     stdout_handle: Any | None = None
     stderr_handle: Any | None = None
-    created_paths: list[Path] = []
     try:
-        if not stdout_exists:
-            created_paths.append(stdout_path)
         stdout_handle = _open_attempt_log(
             stdout_path,
             create=not stdout_exists,
             label="attempt stdout log",
         )
-        if not stderr_exists:
-            created_paths.append(stderr_path)
         stderr_handle = _open_attempt_log(
             stderr_path,
             create=not stderr_exists,
@@ -2572,15 +2567,8 @@ def _prepare_attempt_logs(
             stdout_handle.close()
         if stderr_handle is not None:
             stderr_handle.close()
-        for candidate in created_paths:
-            try:
-                if os.path.lexists(candidate) and file_identity(
-                    candidate,
-                    label="partially prepared attempt log",
-                )["size"] == 0:
-                    candidate.unlink()
-            except BenchHandoffError:
-                pass
+        # A path can belong to a competing creator or have been replaced after
+        # creation. Retain it; the existing empty-log checks govern any retry.
         if isinstance(exc, BenchHandoffError):
             raise
         raise EvidenceError(f"unable to prepare attempt logs: {exc}") from exc
